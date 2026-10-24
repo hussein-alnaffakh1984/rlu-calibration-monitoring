@@ -1,0 +1,1154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RLU Calibration Monitor</title>
+<meta name="description" content="Locate calibration and reagent-lot changes from the raw signal (RLU) exported with each immunoassay result.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: instrument console — narrow control column at the start edge, readout column (status strip, chart, tables) beside it. */
+:root {
+  --bg: #f4f6f8;          /* bench grey, cool bias toward the signal hue */
+  --panel: #ffffff;
+  --ink: #15202b;
+  --muted: #5b6b7a;
+  --line: #d9e0e6;
+  --signal: #1f63c6;      /* luminescence blue: the RLU trace and primary actions */
+  --signal-soft: #e3edfb;
+  --alarm: #b45d00;       /* monitor alarm amber */
+  --alarm-soft: #fbeedd;
+  --ok: #1d7a4a; --ok-soft: #e1f2e8;
+  --crit: #b3261e; --crit-soft: #fbe4e2;
+  --women: #1f63c6; --men: #d4691f;
+  --c1: #1f63c6; --c2: #c2410c; --c3: #15803d; --c4: #7c3aed; --c5: #b45309; --c6: #0e7490;
+  --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans Arabic", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --c1: #7aa7ff; --c2: #fb923c; --c3: #4ade80; --c4: #c4b5fd; --c5: #fbbf24; --c6: #67e8f9;
+  --bg: #0e141a; --panel: #151d25; --ink: #e6edf3; --muted: #93a3b3; --line: #26323d;
+  --signal: #7aa7ff; --signal-soft: #1a2a44; --alarm: #f0a24a; --alarm-soft: #3a2a14;
+  --ok: #5fd39a; --ok-soft: #13301f; --crit: #ff8a80; --crit-soft: #3d1a17; --women: #7aa7ff; --men: #f0a24a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --c1: #7aa7ff; --c2: #fb923c; --c3: #4ade80; --c4: #c4b5fd; --c5: #fbbf24; --c6: #67e8f9;
+  --bg: #0e141a; --panel: #151d25; --ink: #e6edf3; --muted: #93a3b3; --line: #26323d;
+  --signal: #7aa7ff; --signal-soft: #1a2a44; --alarm: #f0a24a; --alarm-soft: #3a2a14;
+  --ok: #5fd39a; --ok-soft: #13301f; --crit: #ff8a80; --crit-soft: #3d1a17; --women: #7aa7ff; --men: #f0a24a; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-body); margin: 0 }
+.wrap { max-width: 1280px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 40px }
+header.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-block: 6px 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px }
+.mark { width: 38px; height: 38px; flex: none }
+.brand h1 { font: 600 22px/1.1 var(--font-display); margin: 0; letter-spacing: .01em; text-wrap: balance }
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px }
+.top .spacer { flex: 1 }
+button, select, input { font: inherit; color: inherit }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; cursor: pointer }
+.btn:hover { border-color: var(--signal) }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: var(--panel); font-weight: 600 }
+.btn:focus-visible, select:focus-visible, input:focus-visible, .drop:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px }
+.btn[disabled] { opacity: .5; cursor: default }
+
+.intro { background: var(--signal-soft); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; margin-bottom: 18px }
+.intro summary { cursor: pointer; font: 600 16px/1.3 var(--font-display) }
+.introBody { display: grid; gap: 10px; margin-top: 8px }
+.introBody p { margin: 0; max-width: 95ch }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: st }
+.steps li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; counter-increment: st; min-width: 0 }
+.steps li::before { content: counter(st); display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--signal); color: var(--panel); font: 600 12px/1 var(--font-data); margin-inline-end: 8px }
+.steps b { font-weight: 600 }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr) } }
+aside { display: grid; gap: 14px }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px }
+.panel h2 { font: 600 13px/1.2 var(--font-display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; display: flex; gap: 8px; align-items: baseline }
+.panel h2 .step { font-family: var(--font-data); color: var(--signal) }
+.drop { display: block; border: 1.5px dashed var(--line); border-radius: 8px; padding: 16px 12px; text-align: center; cursor: pointer; color: var(--muted) }
+.drop.over { border-color: var(--signal); background: var(--signal-soft) }
+.drop strong { color: var(--ink); display: block; font-weight: 600 }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 10px 0 0; font-size: 13px }
+.kv dt { color: var(--muted) } .kv .err { color: var(--crit); white-space: normal; text-align: start; grid-column: 1 / -1 }
+.kv dt:only-child, .kv dt:last-of-type:has(+ dd:empty) { grid-column: 1 / -1; color: var(--alarm) }
+.kv dd { margin: 0; white-space: nowrap; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: end }
+.analytes { display: grid; gap: 6px }
+.analyte { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: start; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 10px; cursor: pointer }
+.analyte[aria-pressed="true"] { border-color: var(--signal); background: var(--signal-soft) }
+.analyte b { font-weight: 600 } .analyte span { color: var(--muted); font-size: 12px; font-family: var(--font-data) }
+details.settings summary { cursor: pointer; font-weight: 600 }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px }
+.grid2 label { display: grid; gap: 3px; font-size: 12px; color: var(--muted) }
+.grid2 input { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 5px 7px; font-family: var(--font-data) }
+.grid2 .wide { grid-column: 1 / -1 }
+.tpl { display: grid; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line) }
+.tpl .hint { margin: 0 }
+.hint { font-size: 12px; color: var(--muted); margin: 8px 0 0 }
+
+main.readout { display: grid; gap: 14px; min-width: 0 }
+.status { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--line); border-inline-start: 5px solid var(--ok) }
+.status.alarm { border-inline-start-color: var(--alarm) } .status.recent { border-inline-start-color: var(--signal) }
+.pill { font: 600 12px/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); white-space: nowrap }
+.status.alarm .pill { background: var(--alarm-soft); color: var(--alarm) } .status.recent .pill { background: var(--signal-soft); color: var(--signal) }
+.status h3 { margin: 0; font: 600 18px/1.25 var(--font-display) } .status p { margin: 2px 0 0; color: var(--muted) }
+.status > div { min-width: 0; flex: 1 1 280px }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px }
+.kpi .v { font: 500 24px/1.1 var(--font-data); font-variant-numeric: tabular-nums } .kpi .l { color: var(--muted); font-size: 12px; margin-top: 4px }
+.chartbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 12px 6px; position: relative }
+.chartbox header { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline }
+.chartbox h3 { margin: 0; font: 600 15px/1.3 var(--font-display) }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin: -2px -2px 8px }
+.tab { border: 0; background: none; padding: 8px 10px; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font: 500 13px/1.2 var(--font-body) }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--signal) }
+.tab:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px }
+.cap { margin: 0 0 6px; color: var(--muted); font-size: 12.5px; max-width: 90ch }
+.legend i.sq { border-radius: 2px }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted) }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 5px; vertical-align: -1px }
+.legend i.line { border-radius: 0; height: 2px; width: 14px; vertical-align: 3px }
+canvas#chart { width: 100%; height: 340px; display: block; margin-top: 8px }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--panel); font: 12px/1.35 var(--font-data); padding: 6px 8px; border-radius: 6px; white-space: nowrap }
+.tablebox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; min-width: 0 }
+.tablebox header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px }
+.tablebox h3 { margin: 0; font: 600 15px/1.3 var(--font-display) }
+.scroll { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; font-size: 13px }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: end; white-space: nowrap }
+th:first-child, td:first-child { text-align: start }
+th { font: 600 12px/1.3 var(--font-body); color: var(--muted); vertical-align: bottom; white-space: normal }
+td { font-family: var(--font-data); font-variant-numeric: tabular-nums }
+td .tag { font-family: var(--font-body); font-size: 11px; padding: 2px 6px; border-radius: 999px; background: var(--line); color: var(--ink) }
+td .tag.det { background: var(--crit-soft); color: var(--crit) } td .tag.comp { background: var(--ok-soft); color: var(--ok) }
+td .tag.off { background: var(--signal-soft); color: var(--signal) }
+.pos { color: var(--crit) } .neg { color: var(--signal) }
+.progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 8px } .progress > i { display: block; height: 100%; width: 0; background: var(--signal); transition: width .2s }
+details.about { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px }
+details.about summary { cursor: pointer; font: 600 15px/1.3 var(--font-display) }
+details.about .note { margin-top: 8px }
+.note { font-size: 12.5px; color: var(--muted); max-width: 75ch }
+.banner { padding: 10px 12px; border-radius: 8px; background: var(--signal-soft); color: var(--ink); font-size: 13px }
+.empty { color: var(--muted); padding: 14px 4px }
+footer.cite .thanks { color: var(--ink); font-weight: 600 }
+footer.cite { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; display: grid; gap: 6px }
+[dir="rtl"] body, [dir="rtl"] .brand h1 { font-family: "IBM Plex Sans Arabic", var(--font-body) }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="1" y="1" width="38" height="38" rx="9" fill="var(--signal-soft)" stroke="var(--line)"/>
+      <path d="M6 27 L12 27 L14 22 L17 30 L20 12 L23 26 L26 20 L28 24 L34 24" fill="none" stroke="var(--signal)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="20" cy="12" r="2.4" fill="var(--alarm)"/>
+    </svg>
+    <div class="brand"><h1 data-i18n="title">RLU Calibration Monitor</h1><p data-i18n="tagline">Locates calibration and reagent-lot changes from the raw signal behind each immunoassay result</p></div>
+    <div class="spacer"></div>
+    <button class="btn" id="lang" type="button">العربية</button>
+  </header>
+
+  <details class="intro" id="intro" open>
+    <summary id="introTitle"></summary>
+    <div class="introBody"><p id="introLead"></p><ol class="steps" id="introSteps"></ol></div>
+  </details>
+
+  <div class="layout">
+    <aside>
+      <section class="panel">
+        <h2><span class="step">1</span><span data-i18n="data">Data</span></h2>
+        <label class="drop" id="drop" tabindex="0">
+          <input type="file" id="files" accept=".xlsx,.xls,.csv" multiple hidden>
+          <strong data-i18n="dropTitle">Add analyser exports</strong>
+          <span data-i18n="dropHint">Result-list files (.xlsx or .csv) with result, RLU and run time. Name files men_… / women_… to record sex.</span>
+        </label>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="demo" type="button" data-i18n="demo">Load simulated example</button>
+          <button class="btn" id="clear" type="button" data-i18n="clear">Clear</button>
+        </div>
+        <dl class="kv" id="summary"></dl>
+        <div class="tpl">
+          <p class="hint" data-i18n="tplHint">Template: the layout the program reads. Required columns: Chemistry, Result, RLU, Run Date. Optional: Sample ID, Sex.</p>
+          <div class="row"><button class="btn" id="tplX" type="button" data-i18n="tplX">Excel template</button><button class="btn" id="tplC" type="button" data-i18n="tplC">CSV template</button></div>
+        </div>
+        <p class="hint" data-i18n="privacy">Files are read in this browser only. Nothing is uploaded.</p>
+      </section>
+
+      <section class="panel">
+        <h2><span class="step">2</span><span data-i18n="analyte">Analyte</span></h2>
+        <div class="analytes" id="analytes"><p class="empty" data-i18n="noData">No data loaded.</p></div>
+      </section>
+
+      <section class="panel">
+        <details class="settings">
+          <summary data-i18n="settings">Settings</summary>
+          <div class="grid2">
+            <label class="wide"><span data-i18n="startDate">Start date (blank = first day with both sexes)</span><input id="s-start" type="date"></label>
+            <label><span data-i18n="pen">PELT penalty</span><input id="s-pen" type="number" step="0.05" value="0.2"></label>
+            <label><span data-i18n="minSize">Min. segment (results)</span><input id="s-min" type="number" step="1" value="30"></label>
+            <label><span data-i18n="merge">Merge threshold (%)</span><input id="s-merge" type="number" step="0.5" value="5"></label>
+            <label><span data-i18n="window">Window (results)</span><input id="s-win" type="number" step="10" value="150"></label>
+            <label><span data-i18n="monT">Monitor threshold (log)</span><input id="s-T" type="number" step="0.01" value="0.08"></label>
+            <label><span data-i18n="monR">Consecutive results</span><input id="s-R" type="number" step="1" value="4"></label>
+            <label><span data-i18n="monKr">Re-learn after alarm</span><input id="s-Kr" type="number" step="1" value="10"></label>
+          </div>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="rerun" type="button" data-i18n="rerun">Re-run analysis</button></div>
+          <p class="hint" data-i18n="defaultsNote">Defaults are the settings validated in the study (monitor tuned on one year of data).</p>
+        </details>
+      </section>
+    </aside>
+
+    <main class="readout" id="readout">
+      <div class="status" id="status"><span class="pill" id="pill">—</span><div><h3 id="statusTitle">—</h3><p id="statusText"></p></div></div>
+      <div class="banner" id="demoBanner" hidden></div>
+      <div class="kpis" id="kpis"></div>
+      <section class="chartbox">
+        <div class="tabs" id="tabs" role="tablist"></div>
+        <p class="cap" id="chartCap"></p>
+        <div class="legend" id="legend"></div>
+        <canvas id="chart" role="img" aria-label="Chart"></canvas>
+        <div class="tip" id="tip" hidden></div>
+      </section>
+      <section class="tablebox">
+        <header><h3 data-i18n="cpTitle">Calibration change points</h3>
+          <div class="row"><button class="btn" id="dlEvents" type="button" data-i18n="dlCsv">Download CSV</button><button class="btn" id="cpEvents" type="button" data-i18n="copy">Copy</button></div></header>
+        <div class="scroll"><table id="events"></table></div>
+        <div class="progress" id="prog" hidden><i></i></div>
+        <p class="note" id="statsNote"></p>
+      </section>
+      <section class="tablebox">
+        <header><h3 data-i18n="alarmTitle">Online RLU monitor alarms</h3>
+          <div class="row"><button class="btn" id="dlAlarms" type="button" data-i18n="dlCsv">Download CSV</button><button class="btn" id="cpAlarms" type="button" data-i18n="copy">Copy</button></div></header>
+        <div class="scroll"><table id="alarms"></table></div>
+      </section>
+      <div class="row"><button class="btn primary" id="report" type="button" data-i18n="report">Save report (HTML)</button></div>
+      <details class="about" open><summary data-i18n="howTitle">How it works, and its limits</summary><div class="note" id="how"></div></details>
+      <details class="about"><summary data-i18n="verTitle">How the calculations were verified</summary><div class="note" id="ver"></div></details>
+    </main>
+  </div>
+
+  <footer class="cite">
+    <span data-i18n="citeA">Method and code: Hussein Ali Hussein Al-Naffakh, University of Alkafeel. Automated change-point detection in raw immunoassay signals identifies calibration changes: validation against analyser records and comparison with patient-based quality control (manuscript in preparation).</span>
+    <span data-i18n="citeB">For quality-management and research use. Confirm change points with the analyser’s calibration history, control material or retained samples before acting on patient results.</span>
+    <span data-i18n="thanks" class="thanks">With thanks to Yasser Al-Mousawi Laboratory, Al-Samawah, for its cooperation and support of this work.</span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script id="core-src">
+/* RLU calibration monitor — analysis core.
+ * Port of the published analysis pipeline (Python: numpy / ruptures 1.1.10) to plain JavaScript.
+ * Works in the browser (window.RLUCore), in a Web Worker and in Node (module.exports).
+ */
+(function (root) {
+  'use strict';
+
+  // ------------------------------------------------------------------ small numerics
+  const mean = a => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s / a.length; };
+  const stdPop = a => { const m = mean(a); let s = 0; for (let i = 0; i < a.length; i++) s += (a[i] - m) ** 2; return Math.sqrt(s / a.length); };
+  function median(a) {
+    const b = Float64Array.from(a).sort(); const n = b.length;
+    if (!n) return NaN;
+    return n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2;
+  }
+  function percentile(a, p) {   // numpy 'linear'
+    const b = Float64Array.from(a).sort(); const n = b.length;
+    const h = (n - 1) * p / 100, lo = Math.floor(h), hi = Math.ceil(h);
+    return b[lo] + (b[hi] - b[lo]) * (h - lo);
+  }
+  // quickselect median for large arrays (in place)
+  function qmedian(arr) {
+    const n = arr.length;
+    const sel = k => {
+      let l = 0, r = n - 1;
+      while (l < r) {
+        const piv = arr[(l + r) >> 1]; let i = l, j = r;
+        while (i <= j) { while (arr[i] < piv) i++; while (arr[j] > piv) j--; if (i <= j) { const t = arr[i]; arr[i] = arr[j]; arr[j] = t; i++; j--; } }
+        if (k <= j) r = j; else if (k >= i) l = i; else return arr[k];
+      }
+      return arr[k];
+    };
+    if (n % 2) return sel((n - 1) / 2);
+    const a = sel(n / 2 - 1); let b = Infinity; for (let i = n / 2; i < n; i++) if (arr[i] < b) b = arr[i];
+    // after sel(n/2-1), elements right of position are >= a; the next order statistic is their minimum
+    return (a + b) / 2;
+  }
+
+  // solve symmetric positive (semi)definite system by Gaussian elimination with partial pivoting
+  function solve(A, b) {
+    const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+    for (let c = 0; c < n; c++) {
+      let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+      if (Math.abs(M[p][c]) < 1e-300) return null;
+      [M[c], M[p]] = [M[p], M[c]];
+      for (let r = c + 1; r < n; r++) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+    }
+    const x = new Array(n).fill(0);
+    for (let r = n - 1; r >= 0; r--) { let s = M[r][n]; for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k]; x[r] = s / M[r][r]; }
+    return x;
+  }
+
+  // least squares of y on polynomial in z (degree deg) for index list / range
+  function polyFit(z, y, idx, deg) {
+    const p = deg + 1, A = Array.from({ length: p }, () => new Array(p).fill(0)), b = new Array(p).fill(0);
+    for (const i of idx) {
+      const zi = z[i]; const pw = [1]; for (let k = 1; k < p; k++) pw.push(pw[k - 1] * zi);
+      for (let r = 0; r < p; r++) { b[r] += pw[r] * y[i]; for (let c = 0; c < p; c++) A[r][c] += pw[r] * pw[c]; }
+    }
+    return solve(A, b);
+  }
+  const polyEval = (beta, z) => { let s = 0, pw = 1; for (let k = 0; k < beta.length; k++) { s += beta[k] * pw; pw *= z; } return s; };
+  const range = (a, b) => { const r = []; for (let i = a; i < b; i++) r.push(i); return r; };
+
+  // ------------------------------------------------------------------ parsing
+  function parseResult(s) {
+    s = String(s == null ? '' : s).trim();
+    if (s === '' || s === 'nan') return { value: NaN, censor: '' };
+    if (s[0] === '<' || s[0] === '>') return { value: parseFloat(s.slice(1)), censor: s[0] };
+    const v = Number(s); return isNaN(v) ? { value: NaN, censor: '?' } : { value: v, censor: '' };
+  }
+
+  /** records: [{test, run(Date), sex, result, rlu}] → dedup, parse, sort. */
+  function prepare(records, opts = {}) {
+    const seen = new Set(); const out = []; let dup = 0, norun = 0;
+    for (const r of records) {
+      const t = r.run instanceof Date ? r.run : new Date(typeof r.run === 'number' ? r.run : NaN);
+      if (!(t instanceof Date) || isNaN(t)) { norun++; continue; }
+      const key = [r.key || '', r.test, t.getTime(), r.result, r.rlu, r.sex].join('|');
+      if (seen.has(key)) { dup++; continue; }
+      seen.add(key);
+      const p = parseResult(r.result);
+      out.push({ test: String(r.test).trim(), run: t, sex: r.sex || '', value: p.value, censor: p.censor, RLU: Number(r.rlu) });
+    }
+    let kept = out;
+    if (opts.start) kept = out.filter(r => r.run >= opts.start);
+    kept.sort((a, b) => a.run - b.run);
+    return { records: kept, duplicates: dup, withoutRunTime: norun, beforeStart: out.length - kept.length };
+  }
+
+  const curveStream = (recs, test) => recs.filter(r => r.test === test && r.censor === '' && r.value > 0 && r.RLU > 0);
+  const patientStream = (recs, test) => recs.filter(r => r.test === test && r.censor === '' && r.value > 0);
+
+  // ------------------------------------------------------------------ change points (PELT, linear cost)
+  function pelt(lv, Z, minSize, pen) {
+    // Z: array of rows [1, z, z^2, z^3]; cost = RSS of OLS fit of lv on Z over [s, e)
+    const n = lv.length, p = Z[0].length;
+    const nsq = p * (p + 1) / 2;
+    const cXX = new Float64Array((n + 1) * nsq), cXy = new Float64Array((n + 1) * p), cyy = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) {
+      const row = Z[i], o = (i + 1) * nsq, oo = i * nsq; let q = 0;
+      for (let a = 0; a < p; a++) for (let b = a; b < p; b++) { cXX[o + q] = cXX[oo + q] + row[a] * row[b]; q++; }
+      for (let a = 0; a < p; a++) cXy[(i + 1) * p + a] = cXy[i * p + a] + row[a] * lv[i];
+      cyy[i + 1] = cyy[i] + lv[i] * lv[i];
+    }
+    const cost = (s, e) => {
+      const A = Array.from({ length: p }, () => new Array(p)), b = new Array(p); let q = 0;
+      for (let a = 0; a < p; a++) for (let c = a; c < p; c++) { const v = cXX[e * nsq + q] - cXX[s * nsq + q]; A[a][c] = v; A[c][a] = v; q++; }
+      for (let a = 0; a < p; a++) b[a] = cXy[e * p + a] - cXy[s * p + a];
+      const beta = solve(A, b); const yy = cyy[e] - cyy[s];
+      if (!beta) return yy;
+      let bt = 0; for (let a = 0; a < p; a++) bt += beta[a] * b[a];
+      return Math.max(yy - bt, 0);
+    };
+    // ruptures Pelt._seg with jump = 1
+    const parts = new Map(); parts.set(0, { bk: [], total: 0 });
+    let adm = [];
+    const ind = []; for (let k = minSize; k < n; k++) ind.push(k); ind.push(n);
+    for (const bkp of ind) {
+      adm.push(bkp - minSize);
+      const subs = [];
+      for (const t of adm) {
+        const pt = parts.get(t); if (!pt) { subs.push(null); continue; }
+        subs.push({ t, total: pt.total + cost(t, bkp) + pen, bk: pt.bk });
+      }
+      let best = null; for (const s of subs) if (s && (!best || s.total < best.total)) best = s;
+      parts.set(bkp, { bk: best.bk.concat([bkp]), total: best.total });
+      const keep = []; for (let i = 0; i < adm.length; i++) if (subs[i] && subs[i].total <= best.total + pen) keep.push(adm[i]);
+      adm = keep;
+    }
+    return parts.get(n).bk;
+  }
+
+  function changePoints(x, { pen = 0.2, minSize = 30, minShift = 0.05 } = {}) {
+    const lr = x.map(r => Math.log(r.RLU)), lv = x.map(r => Math.log(r.value));
+    const mu = mean(lr), sd = stdPop(lr), z = lr.map(v => (v - mu) / sd);
+    const Z = z.map(v => [1, v, v * v, v * v * v]);
+    let b = pelt(lv, Z, minSize, pen);
+    const ref = (Math.log(median(x.map(r => r.RLU))) - mu) / sd;
+    const levels = bk => { let s = 0; return bk.map(e => { const beta = polyFit(z, lv, range(s, e), 3); s = e; return polyEval(beta, ref); }); };
+    while (b.length > 1) {
+      const lev = levels(b); let k = 0, dmin = Infinity;
+      for (let i = 0; i + 1 < lev.length; i++) { const d = Math.abs(lev[i + 1] - lev[i]); if (d < dmin) { dmin = d; k = i; } }
+      if (dmin >= Math.log1p(minShift)) break;
+      b = b.slice(0, k).concat(b.slice(k + 1));
+    }
+    return { bkps: b, z, lv, lr, mu, sd, ref };
+  }
+
+  // ------------------------------------------------------------------ Hodges–Lehmann and resampling
+  function hl(a, b) {
+    const d = new Float64Array(a.length * b.length); let q = 0;
+    for (let j = 0; j < b.length; j++) for (let i = 0; i < a.length; i++) d[q++] = b[j] - a[i];
+    return qmedian(d);
+  }
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+  function blockCI(a, b, da, db, reps, seed) {
+    const r = rng(seed), ga = groupBy(a, da), gb = groupBy(b, db), ka = [...ga.keys()], kb = [...gb.keys()], out = [];
+    for (let k = 0; k < reps; k++) {
+      const A = [], B = [];
+      for (let i = 0; i < ka.length; i++) A.push(...ga.get(ka[Math.floor(r() * ka.length)]));
+      for (let i = 0; i < kb.length; i++) B.push(...gb.get(kb[Math.floor(r() * kb.length)]));
+      out.push(hl(A, B));
+    }
+    return [percentile(out, 2.5), percentile(out, 97.5)];
+  }
+  function groupBy(v, keys) { const m = new Map(); v.forEach((x, i) => { const k = keys[i]; if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; }
+  const dayKey = d => d.getUTCFullYear() + '-' + (d.getUTCMonth() + 1) + '-' + d.getUTCDate();   // times are naive (stored as UTC)
+
+  // ------------------------------------------------------------------ events
+  function searchsorted(times, t) { let lo = 0, hi = times.length; while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] < t) lo = m + 1; else hi = m; } return lo; }
+
+  /** Full analysis of one analyte. Returns change points with curve, signal and patient shifts. */
+  function analyse(recs, test, opts = {}) {
+    const W = opts.window || 150;
+    const x = curveStream(recs, test);
+    if (x.length < 2 * (opts.minSize || 30)) return { test, n: x.length, error: 'too few results' };
+    const cp = changePoints(x, opts);
+    const { bkps, z, lv, lr, mu, sd, ref } = cp;
+    const starts = [0].concat(bkps.slice(0, -1));
+    // segments
+    const segs = []; let s0 = 0;
+    for (const e of bkps) {
+      const idx = range(s0, e), beta = polyFit(z, lv, idx, 3);
+      const res = idx.map(i => lv[i] - polyEval(beta, z[i]));
+      segs.push({ start: x[s0].run, end: x[e - 1].run, n: e - s0, level: Math.exp(polyEval(beta, ref)), residSD: stdPop(res) });
+      s0 = e;
+    }
+    // whole-period curve and deviations (for the chart)
+    const betaAll = polyFit(z, lv, range(0, x.length), 3);
+    const deviation = x.map((r, i) => 100 * Math.expm1(lv[i] - polyEval(betaAll, z[i])));
+    // patient stream for patient shifts
+    const ps = patientStream(recs, test), pt = ps.map(r => r.run.getTime()), plv = ps.map(r => Math.log(r.value));
+    const gaps = x.map((r, i) => i ? (r.run - x[i - 1].run) / 864e5 : NaN);
+    const events = [];
+    const evTimes = bkps.slice(0, -1).map(i => x[i].run.getTime());
+    const pidx = evTimes.map(t => searchsorted(pt, t));
+    for (let k = 1; k < bkps.length; k++) {
+      const ie = bkps[k - 1], a0 = Math.max(starts[k - 1], ie - W), b1 = Math.min(bkps[k], ie + W);
+      const A = range(a0, ie), B = range(ie, b1);
+      const fA = polyFit(z, lv, A, 3), fB = polyFit(z, lv, B, 3);
+      const curve = 100 * Math.expm1(polyEval(fB, ref) - polyEval(fA, ref));
+      const q = [10, 50, 90].map(p => (percentile(lr.slice(a0, b1), p) - mu) / sd);
+      const sh = q.map(v => 100 * Math.expm1(polyEval(fB, v) - polyEval(fA, v)));
+      const sexShift = sx => {
+        const a = A.filter(i => x[i].sex === sx), b = B.filter(i => x[i].sex === sx);
+        if (a.length < 8 || b.length < 8) return NaN;
+        return 100 * Math.expm1(polyEval(polyFit(z, lv, b, 3), ref) - polyEval(polyFit(z, lv, a, 3), ref));
+      };
+      const signal = 100 * Math.expm1(hl(A.map(i => lr[i]), B.map(i => lr[i])));
+      // local slope beta = d log(result) / d log(RLU) of the window curve at the window's median log RLU
+      const wl = lr.slice(a0, b1), wm = mean(wl), ws = stdPop(wl), wz = wl.map(v => (v - wm) / ws);
+      const bw = polyFit(wz, lv.slice(a0, b1), range(0, wl.length), 3), zq = (median(wl) - wm) / ws;
+      const beta = (bw[1] + 2 * bw[2] * zq + 3 * bw[3] * zq * zq) / ws;
+      // patient windows
+      const pi = pidx[k - 1], pv = k > 1 ? pidx[k - 2] : 0, nx = k < pidx.length ? pidx[k] : ps.length;
+      const PA = range(Math.max(pv, pi - W), pi), PB = range(pi, Math.min(nx, pi + W));
+      const patient = 100 * Math.expm1(hl(PA.map(i => plv[i]), PB.map(i => plv[i])));
+      let gapNear = false; for (let i = Math.max(1, ie - 5); i <= Math.min(x.length - 1, ie + 5); i++) if (gaps[i] >= 2) gapNear = true;
+      events.push({
+        k, time: x[ie].run, index: ie, nBefore: A.length, nAfter: B.length, curveShift: curve,
+        shiftP10: sh[0], shiftP50: sh[1], shiftP90: sh[2], shiftRange: Math.max(...sh) - Math.min(...sh),
+        curveShiftF: sexShift('F'), curveShiftM: sexShift('M'), signalShift: signal, beta,
+        patientShift: patient, gapBefore: gaps[ie], gapNear,
+        _patient: { a: PA.map(i => plv[i]), b: PB.map(i => plv[i]), da: PA.map(i => dayKey(ps[i].run)), db: PB.map(i => dayKey(ps[i].run)) },
+      });
+    }
+    return { test, n: x.length, nPatient: ps.length, x, deviation, segments: segs, events, bkps };
+  }
+
+  /** Confidence intervals for patient shifts (day-level block bootstrap). Heavy: run in a worker. */
+  function patientCIs(events, reps = 500, seed = 2026, onProgress) {
+    return events.map((e, i) => {
+      const p = e._patient; const ci = blockCI(p.a, p.b, p.da, p.db, reps, seed + i);
+      if (onProgress) onProgress((i + 1) / events.length);
+      return [100 * Math.expm1(ci[0]), 100 * Math.expm1(ci[1])];
+    });
+  }
+
+  /** Two-sided day-level permutation P value for the Hodges–Lehmann shift. */
+  function permP(a, b, da, db, reps = 2000, seed = 31) {
+    const r = rng(seed), obs = Math.abs(hl(a, b)), vals = a.concat(b), days = da.concat(db);
+    const g = groupBy(vals, days), ud = [...g.keys()], na = new Set(da).size; let cnt = 0;
+    for (let k = 0; k < reps; k++) {
+      for (let i = ud.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ud[i], ud[j]] = [ud[j], ud[i]]; }
+      const A = [], B = [];
+      for (let i = 0; i < ud.length; i++) (i < na ? A : B).push(...g.get(ud[i]));
+      if (Math.abs(hl(A, B)) >= obs) cnt++;
+    }
+    return (cnt + 1) / (reps + 1);
+  }
+  /** Benjamini–Hochberg adjusted P values. */
+  function bh(p) {
+    const n = p.length, o = p.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0]), q = new Array(n); let m = 1;
+    for (let k = n - 1; k >= 0; k--) { m = Math.min(m, o[k][0] * n / (k + 1)); q[o[k][1]] = m; }
+    return q;
+  }
+  /** Patient-shift inference for a list of events: bootstrap CI + permutation P (heavy; use a worker). */
+  function patientStats(events, { reps = 500, perms = 2000, seed = 2026 } = {}, onProgress) {
+    return events.map((e, i) => {
+      const p = e._patient;
+      const ci = blockCI(p.a, p.b, p.da, p.db, reps, seed + i), pv = permP(p.a, p.b, p.da, p.db, perms, seed + 1000 + i);
+      if (onProgress) onProgress((i + 1) / events.length);
+      return { lo: 100 * Math.expm1(ci[0]), hi: 100 * Math.expm1(ci[1]), p: pv };
+    });
+  }
+
+  // ------------------------------------------------------------------ online RLU monitor
+  /** trace (optional array of length n) receives each result's log deviation from the monitor's prediction. */
+  function monitor(lr, lv, T = 0.08, R = 4, Kr = 10, K0 = 30, wmax = 200, trace = null) {
+    const alarms = []; let i0 = 0, run = 0, i = K0; const n = lr.length;
+    while (i < n) {
+      const a = Math.max(i0, i - wmax), xs = lr.slice(a, i), ys = lv.slice(a, i);
+      const mu = mean(xs); let sd = stdPop(xs); if (!sd) sd = 1;
+      const zz = xs.map(v => (v - mu) / sd), beta = polyFit(zz, ys, range(0, zz.length), 2);
+      const zq = (lr[i] - mu) / sd;
+      const dev = beta ? lv[i] - polyEval(beta, zq) : 0;
+      if (trace) trace[i] = dev;
+      if (Math.abs(dev) > T) {
+        run++;
+        if (run >= R) { const s0 = i - R + 1; alarms.push({ first: s0, raised: i }); i0 = s0; run = 0; i = s0 + Kr; continue; }
+      } else run = 0;
+      i++;
+    }
+    return alarms;
+  }
+
+  const api = { polyFit, polyEval, parseResult, prepare, curveStream, patientStream, changePoints, analyse, patientCIs, patientStats, permP, bh, monitor, hl, median, percentile, rng };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RLUCore = api;
+})(typeof self !== 'undefined' ? self : this);
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const C = window.RLUCore;
+  const $ = s => document.querySelector(s);
+
+  // ---------------------------------------------------------------- language
+  const I18N = {
+    en: {},
+    ar: {
+      title: 'مراقب معايرة RLU', tagline: 'يحدد تغيّرات المعايرة ودفعات الكاشف من الإشارة الخام خلف كل نتيجة مناعية',
+      data: 'البيانات', dropTitle: 'أضف ملفات الجهاز', dropHint: 'ملفات قائمة النتائج (‎.xlsx أو ‎.csv) فيها النتيجة وRLU ووقت التشغيل. سمِّ الملفات men_… / women_… لتسجيل الجنس.',
+      demo: 'حمّل مثالاً محاكى', clear: 'مسح', privacy: 'تُقرأ الملفات داخل هذا المتصفح فقط، ولا يُرفع شيء.',
+      analyte: 'التحليل', noData: 'لا توجد بيانات.', settings: 'الإعدادات', startDate: 'تاريخ البداية (فارغ = أول يوم فيه الجنسان)',
+      pen: 'عقوبة PELT', minSize: 'أقل قطعة (نتائج)', merge: 'عتبة الدمج (%)', window: 'النافذة (نتائج)', monT: 'عتبة المراقب (log)',
+      monR: 'نتائج متتالية', monKr: 'إعادة التعلم بعد الإنذار', rerun: 'أعد التحليل', defaultsNote: 'القيم الافتراضية هي المتحقق منها في الدراسة (المراقب مضبوط على سنة من البيانات).',
+      chartTitle: 'انحراف كل نتيجة عن منحنى RLU للفترة كاملة', women: 'نساء', men: 'رجال', segMed: 'مستوى القطعة', cpLeg: 'نقطة تغيّر', alarmLeg: 'إنذار المراقب',
+      cpTitle: 'نقاط تغيّر المعايرة', tplHint: 'القالب: الشكل الذي يقرؤه البرنامج. الأعمدة المطلوبة: Chemistry وResult وRLU وRun Date. الأعمدة الاختيارية: Sample ID وSex.', tplX: 'قالب Excel', tplC: 'قالب CSV', report: 'احفظ التقرير (HTML)', verTitle: 'كيف تحققنا من صحة الحساب', howTitle: 'كيف يعمل البرنامج، وحدوده', dlCsv: 'نزّل CSV', copy: 'انسخ', alarmTitle: 'إنذارات مراقب RLU',
+      citeA: 'الطريقة والبرنامج: حسين علي حسين النفاخ، جامعة الكفيل. الكشف الآلي عن نقاط التغيّر في الإشارة الخام للفحوص المناعية يحدد تغيّرات المعايرة: التحقق بسجلات الجهاز والمقارنة بضبط الجودة المعتمد على نتائج المرضى (مخطوطة قيد الإعداد).',
+      citeB: 'لأغراض إدارة الجودة والبحث. أكِّد نقاط التغيّر بسجل معايرة الجهاز أو مواد السيطرة أو عينات محفوظة قبل أي إجراء على نتائج المرضى.',
+      thanks: 'شكر وتقدير لمختبر ياسر الموسوي في السماوة لتعاونه ودعمه لهذا العمل.',
+    },
+  };
+  const T = {
+    en: {
+      introTitle: 'What this tool does',
+      introLead: 'The analyser does not measure concentration directly. It measures light (RLU) and converts it to a result using its current calibration. Every recalibration or new reagent lot changes that conversion, so the same sample can read higher or lower than before. This tool finds those changes in the analyser’s own export files, with no extra samples or controls.',
+      introSteps: ['<b>Export</b> the result list from the analyser as Excel. It must include the RLU column.', '<b>Add</b> the file here (one or more). The files stay on this computer.', '<b>Pick a test</b> and read: the dates the calibration changed and by how much, whether patient results really shifted, and an alarm if the analyser is drifting now, so you can check it with control material.'],
+      women: 'Women', men: 'Men', segMed: 'Segment level', cpLeg: 'Change point', alarmLeg: 'Monitor alarm',
+      tab_dev: 'Deviation over time', tab_curves: 'Calibration curves', tab_trans: 'Curve vs patient shift', tab_signal: 'Signal compensation', tab_monitor: 'Monitor trace',
+      cap_dev: 'Each dot is one result: how far its (RLU, result) pair lies from one curve fitted to the whole period. Steps between flat segments are calibration changes.',
+      cap_curves: 'Result against RLU on log scales, coloured by segment, with each segment’s fitted calibration curve. A recalibration or new lot moves the curve; the thick line is the current curve.',
+      cap_trans: 'For each change point: the change in the result given to the same RLU (curve shift) against the change in patient results (95% CI once computed). Points on the dashed line passed fully to patients; points on zero were fully offset.',
+      cap_signal: 'Curve shift against the shift in patients’ RLU converted to its effect on results (β × signal shift). Points near the dashed curve were fully offset, as when a new lot with a different signal yield is recalibrated. Signal shifts also contain case-mix change.',
+      cap_monitor: 'Deviation of each result from the online monitor’s prediction (quadratic RLU→result curve of the recent results). Results outside the band count towards an alarm.',
+      yDev: 'Deviation from whole-period curve', xRLU: 'RLU (log scale)', yResult: 'Result (log scale)', segment: 'segment', current: 'current',
+      xCurve: 'Curve shift at median RLU', yPatient: 'Patient-result shift', evPoint: 'Change point', fitSlope: 'Fit, slope {s}', fullTrans: 'Full transmission',
+      ySignal: 'Signal component (β × RLU shift)', notOffset: 'Not offset', fullComp: 'Full compensation', yMonitor: 'Deviation from monitor prediction',
+      band: 'Within threshold (±{b}%)', beyond: 'Beyond threshold',
+      report: 'Save report (HTML)', errFiles: 'Could not read: {e}', tooFew: 'No test has enough results yet: each test needs at least {n} results with RLU.',
+      records: 'Records', period: 'Period', dups: 'Duplicates removed', noRun: 'Without run time', excluded: 'Before start date', analytesN: 'Analytes',
+      usable: 'usable', cps: 'change points', stable: 'Stable', alarm: 'Alarm', recent: 'Recent change',
+      sinceTitle: 'Current calibration since {d}', sinceText: '{n} results on the current curve. Last change point {d0}; last monitor alarm {d1}.',
+      alarmTitle: 'Monitor alarm on {d}', alarmText: 'The last {n} results deviate from the current curve. Check whether the analyser was recalibrated or a new reagent lot was opened.',
+      recentText: 'A change point was located on {d}, {n} results ago. Verify with control material or retained samples.',
+      none: 'none', kCp: 'Change points', kMed: 'Median |curve shift|', kRate: 'Results per day', kAlarms: 'Monitor alarms', kDet: 'Patient shifts detected',
+      hDate: 'Date', hCurve: 'Curve shift, %', hRange: 'P10/P50/P90 range, pp', hSignal: 'Signal (RLU) shift, %', hPatient: 'Patient shift, % (95% CI)', hQ: 'q', hCat: 'Category', hGap: 'Gap ≥2 d', hMon: 'Alarm ≤7 d', hN: 'Results before / after',
+      det: 'shift detected', comp: 'compensated', indet: 'indeterminate', pending: 'computing…', offset: 'opposes curve',
+      aRaised: 'Alarm raised', aFirst: 'First deviating result', aNear: 'Within 7 days after a change point', yes: 'yes', no: 'no',
+      noEvents: 'No change point found with these settings.', noAlarms: 'No alarms.',
+      statsRun: 'Computing confidence intervals (day-level bootstrap, 500) and permutation tests (2,000) for every analyte…',
+      statsDone: 'Patient shift: Hodges–Lehmann difference of log results within the window; 95% CI by day-level block bootstrap; q = Benjamini–Hochberg-adjusted day-level permutation P across all analytes listed. “Opposes curve”: the signal moved results by at least 5% in the opposite direction to the curve shift. Shift detected: q < 0.05; compensated: CI within ±10%.',
+      copied: 'Copied', copyFail: 'Select the table and copy it', demoBanner: 'Simulated example, not patient data. Planned calibration events: {list}.',
+      how: '<p>Within one calibration the analyser converts the raw light signal (RLU) of every sample into a result through the same curve, so the pair (RLU, result) lies on that curve. A recalibration or a new reagent lot moves the curve. The chart plots, for every result, how far it lies from one curve fitted to the whole period; steps in this cloud are calibration changes.</p><p><b>Curve shift</b> is the change in the result given to the same RLU. <b>Signal shift</b> is the change in the patients’ RLU; when it opposes the curve shift, a new lot with a different signal yield was probably offset by recalibration (in the study this followed new reagent lots, not recalibration within a lot). <b>Patient shift</b> is what clinicians saw; at a few results per day its confidence interval is wide, so most changes are indeterminate.</p><p>The <b>online monitor</b> predicts each result from its RLU using the recent results and raises an alarm when {R} consecutive results deviate by more than {T} on the log scale (about {P}%). Use an alarm as a prompt to check the analyser’s calibration log and to verify with control material.</p><p><b>Limits.</b> Check change points against the analyser’s calibration history: in the study, 24 of 33 matched it, and every calibration that moved the curve by 5% or more was found within 3 days. A change point with no logged calibration can mean that two reagent packs with separate calibrations were used in turn. The method cannot see bias that does not change the RLU→result mapping (reagent deterioration within a lot, matrix effects, pre-analytical errors). It needs the analyser to export RLU with each result, and at a few results per day the effect of one change on patients is uncertain. Scatter is larger for analytes with rounded low results, so changes below about 5% may be missed.</p>',
+      ver: '<ul><li>The analysis core is a line-by-line port of the study’s Python pipeline (NumPy; ruptures 1.1.10). On the study data it places all 34 change points at the same results; curve, signal and patient shifts and local slopes agree to better than 10<sup>−11</sup>; the online monitor raises the same 35 alarms.</li><li>Uploading the original analyser exports reproduces the study’s counts: 15,635 records from 15 September 2023, with 25 duplicates and 66 earlier results removed.</li><li>Confidence intervals (500 day-level bootstrap resamples) and permutation P values (2,000 day-level permutations) use a different random-number generator from the paper, so they differ in the second decimal; the same four change points are classed as shift detected.</li><li>The simulated example has planned calibration events (listed above the chart) for checking that the page finds them.</li></ul>',
+    },
+    ar: {
+      introTitle: 'ما الذي يفعله البرنامج',
+      introLead: 'لا يقيس الجهاز التركيز مباشرة، بل يقيس كمية الضوء الصادرة (RLU) ثم يحوّلها إلى نتيجة وفق المعايرة الحالية. وكل معايرة جديدة أو دفعة كاشف جديدة تغيّر هذا التحويل، فقد تظهر نتيجة العينة نفسها أعلى أو أقل مما كانت عليه. يكشف البرنامج هذه التغيّرات من ملفات الجهاز نفسها، دون الحاجة إلى عينات أو مواد سيطرة إضافية.',
+      introSteps: ['<b>صدِّر</b> قائمة النتائج من الجهاز بصيغة Excel، على أن تتضمن عمود RLU.', '<b>ارفع</b> الملف هنا (ملفًا واحدًا أو أكثر). تبقى الملفات على هذا الحاسوب ولا تُرسل إلى أي جهة.', '<b>اختر الفحص</b> واطّلع على: تواريخ تغيّر المعايرة ومقدارها بالنسبة المئوية، وهل تغيّرت نتائج المرضى فعلًا، وتنبيه عند انحراف الجهاز حاليًا للتحقق منه بمواد السيطرة.'],
+      women: 'نساء', men: 'رجال', segMed: 'مستوى القطعة', cpLeg: 'نقطة تغيّر', alarmLeg: 'إنذار المراقب',
+      tab_dev: 'الانحراف عبر الزمن', tab_curves: 'منحنيات المعايرة', tab_trans: 'المنحنى مقابل المرضى', tab_signal: 'تعويض الإشارة', tab_monitor: 'أثر المراقب',
+      cap_dev: 'كل نقطة نتيجة واحدة: بُعد زوجها (RLU، النتيجة) عن منحنى واحد للفترة كلها. القفزات بين القطع المستوية تغيّرات معايرة.',
+      cap_curves: 'النتيجة مقابل RLU على مقياس لوغاريتمي، ملوّنة حسب القطعة، مع منحنى المعايرة المطابق لكل قطعة. إعادة المعايرة أو دفعة الكاشف الجديدة تحرّك المنحنى؛ الخط العريض هو المنحنى الحالي.',
+      cap_trans: 'لكل نقطة تغيّر: تغيّر النتيجة المعطاة لنفس RLU (إزاحة المنحنى) مقابل تغيّر نتائج المرضى (فترة ثقة 95% بعد الحساب). النقاط على الخط المتقطع انتقلت كاملة للمرضى؛ والنقاط على الصفر عُوّضت كاملة.',
+      cap_signal: 'إزاحة المنحنى مقابل إزاحة RLU للمرضى محوّلة لأثرها على النتائج (β × إزاحة الإشارة). النقاط قرب المنحنى المتقطع عُوّضت كاملة، كما يحدث عند معايرة دفعة كاشف جديدة بإشارة مختلفة. إزاحة الإشارة تتأثر أيضًا بنوعية المرضى.',
+      cap_monitor: 'انحراف كل نتيجة عن تنبؤ المراقب الآني (منحنى تربيعي RLU→نتيجة من النتائج الحديثة). النتائج خارج الشريط تُحسب نحو الإنذار.',
+      yDev: 'الانحراف عن منحنى الفترة', xRLU: 'RLU (مقياس لوغاريتمي)', yResult: 'النتيجة (مقياس لوغاريتمي)', segment: 'قطعة', current: 'الحالي',
+      xCurve: 'إزاحة المنحنى عند وسيط RLU', yPatient: 'إزاحة نتائج المرضى', evPoint: 'نقطة تغيّر', fitSlope: 'خط المطابقة، الميل {s}', fullTrans: 'انتقال كامل',
+      ySignal: 'أثر الإشارة (β × إزاحة RLU)', notOffset: 'غير معاكسة', fullComp: 'تعويض كامل', yMonitor: 'الانحراف عن تنبؤ المراقب',
+      band: 'ضمن العتبة (±{b}%)', beyond: 'خارج العتبة',
+      report: 'احفظ التقرير (HTML)', errFiles: 'تعذّرت قراءة: {e}', tooFew: 'لا يوجد فحص بعدد كافٍ من النتائج بعد: يحتاج كل فحص إلى {n} نتيجة على الأقل مع RLU.',
+      records: 'السجلات', period: 'الفترة', dups: 'مكررات محذوفة', noRun: 'بلا وقت تشغيل', excluded: 'قبل تاريخ البداية', analytesN: 'التحاليل',
+      usable: 'صالحة', cps: 'نقاط تغيّر', stable: 'مستقر', alarm: 'إنذار', recent: 'تغيّر حديث',
+      sinceTitle: 'المعايرة الحالية منذ {d}', sinceText: '{n} نتيجة على المنحنى الحالي. آخر نقطة تغيّر {d0}؛ آخر إنذار للمراقب {d1}.',
+      alarmTitle: 'إنذار المراقب في {d}', alarmText: 'آخر {n} نتائج تنحرف عن المنحنى الحالي. تحقّق إن كان الجهاز أُعيدت معايرته أو فُتحت دفعة كاشف جديدة.',
+      recentText: 'حُدِّدت نقطة تغيّر في {d} قبل {n} نتيجة. تحقّق بمواد السيطرة أو عينات محفوظة.',
+      none: 'لا يوجد', kCp: 'نقاط التغيّر', kMed: 'وسيط |إزاحة المنحنى|', kRate: 'نتائج في اليوم', kAlarms: 'إنذارات المراقب', kDet: 'إزاحات مثبتة بالمرضى',
+      hDate: 'التاريخ', hCurve: 'إزاحة المنحنى %', hRange: 'مدى P10/P50/P90 (نقطة مئوية)', hSignal: 'إزاحة الإشارة RLU %', hPatient: 'إزاحة نتائج المرضى % (95% CI)', hQ: 'q', hCat: 'التصنيف', hGap: 'فجوة ≥ يومين', hMon: 'إنذار ≤7 أيام', hN: 'نتائج قبل / بعد',
+      det: 'إزاحة مثبتة', comp: 'معوَّضة', indet: 'غير محسومة', pending: 'جارٍ الحساب…', offset: 'تعاكس المنحنى',
+      aRaised: 'وقت الإنذار', aFirst: 'أول نتيجة منحرفة', aNear: 'خلال 7 أيام بعد نقطة تغيّر', yes: 'نعم', no: 'لا',
+      noEvents: 'لا توجد نقطة تغيّر بهذه الإعدادات.', noAlarms: 'لا توجد إنذارات.',
+      statsRun: 'جارٍ حساب فترات الثقة (bootstrap بالأيام، 500) واختبارات التبديل (2000) لكل التحاليل…',
+      statsDone: 'إزاحة المرضى: فرق Hodges–Lehmann للوغاريتم النتائج ضمن النافذة؛ فترة ثقة 95% بـ bootstrap على مستوى اليوم؛ q = قيمة P لاختبار التبديل بالأيام بعد تصحيح Benjamini–Hochberg عبر كل التحاليل المعروضة. «تعاكس المنحنى»: الإشارة حرّكت النتائج بـ 5% أو أكثر بعكس اتجاه إزاحة المنحنى. مثبتة: q < 0.05؛ معوَّضة: فترة الثقة ضمن ±10%.',
+      copied: 'نُسخ', copyFail: 'ظلّل الجدول وانسخه', demoBanner: 'مثال محاكى وليس بيانات مرضى. أحداث المعايرة المبرمجة: {list}.',
+      how: '<p>ضمن المعايرة الواحدة يحوّل الجهاز إشارة الضوء الخام (RLU) لكل عينة إلى نتيجة عبر المنحنى نفسه، فيقع الزوج (RLU، النتيجة) على ذلك المنحنى. إعادة المعايرة أو دفعة الكاشف الجديدة تحرّك المنحنى. يرسم المخطط بُعد كل نتيجة عن منحنى واحد للفترة كلها؛ والقفزات في هذه السحابة هي تغيّرات المعايرة.</p><p><b>إزاحة المنحنى</b> تغيّر النتيجة المعطاة لنفس RLU. <b>إزاحة الإشارة</b> تغيّر RLU للمرضى؛ وإذا عاكست إزاحة المنحنى فالأرجح دفعة كاشف جديدة بإشارة مختلفة عوّضتها إعادة المعايرة (وفي الدراسة حدث ذلك بعد دفعات الكاشف الجديدة لا بعد إعادة المعايرة ضمن الدفعة نفسها). <b>إزاحة المرضى</b> ما رآه الأطباء؛ وبعدد قليل من النتائج يوميًا تكون فترة الثقة واسعة فتبقى أغلب التغيّرات غير محسومة.</p><p><b>المراقب الآني</b> يتنبأ بكل نتيجة من RLU باستخدام النتائج الحديثة ويطلق إنذارًا عندما تنحرف {R} نتائج متتالية بأكثر من {T} على المقياس اللوغاريتمي (نحو {P}%). استخدم الإنذار دافعًا لمراجعة سجل معايرة الجهاز والتحقق بمواد السيطرة.</p><p><b>الحدود.</b> قارن نقاط التغيّر بسجل معايرة الجهاز: في الدراسة طابقت 24 من 33 نقطةً هذا السجل، وعُثر على كل معايرة غيّرت المنحنى بنسبة 5% أو أكثر خلال 3 أيام. وقد تعني نقطة تغيّر بلا معايرة مسجلة أن عبوتَي كاشف بمعايرتين منفصلتين استُخدمتا بالتناوب. لا ترى الطريقة انحيازًا لا يغيّر علاقة RLU بالنتيجة (تلف الكاشف داخل الدفعة، تأثيرات المصل، أخطاء ما قبل التحليل). تحتاج أن يصدّر الجهاز RLU مع كل نتيجة، ومع عدد قليل من النتائج يوميًا يبقى أثر التغيّر الواحد على المرضى غير مؤكد. التشتت أكبر في التحاليل ذات النتائج المنخفضة المقرّبة، فقد تفوت تغيّرات أصغر من نحو 5%.</p>',
+      ver: '<ul><li>نواة التحليل منقولة سطرًا بسطر من كود Python للدراسة (NumPy؛ ruptures 1.1.10). على بيانات الدراسة تضع نقاط التغيّر الـ34 كلها عند النتائج نفسها، وتتطابق إزاحات المنحنى والإشارة والمرضى والميل المحلي بفرق أقل من 10<sup>\u221211</sup>، ويطلق المراقب الإنذارات الـ35 نفسها.</li><li>رفع ملفات الجهاز الأصلية يعيد أعداد الدراسة: 15,635 سجلًا من 15 أيلول 2023، وحذف 25 مكررًا و66 نتيجة أقدم.</li><li>فترات الثقة (500 إعادة معاينة بالأيام) وقيم P للتبديل (2000 تبديل بالأيام) تستخدم مولّد أرقام عشوائية مختلفًا عن البحث فتختلف في الخانة العشرية الثانية؛ وتُصنَّف نقاط التغيّر الأربع نفسها إزاحةً مثبتة.</li><li>المثال المحاكى فيه أحداث معايرة مبرمجة (مذكورة فوق المخطط) للتحقق من أن البرنامج يجدها.</li></ul>',
+    },
+  };
+  let lang = 'en';
+  try { lang = localStorage.getItem('rlu-lang') || 'en'; } catch (e) {}
+  const t = (k, v = {}) => (T[lang][k] || T.en[k] || k).replace(/\{(\w+)\}/g, (_, n) => v[n] ?? '');
+  function applyLang() {
+    document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      if (!el.dataset.en) el.dataset.en = el.textContent;
+      el.textContent = lang === 'ar' ? (I18N.ar[el.dataset.i18n] || el.dataset.en) : el.dataset.en;
+    });
+    $('#lang').textContent = lang === 'ar' ? 'English' : 'العربية';
+    render();
+  }
+  $('#lang').addEventListener('click', () => { lang = lang === 'ar' ? 'en' : 'ar'; try { localStorage.setItem('rlu-lang', lang); } catch (e) {} applyLang(); });
+
+  // ---------------------------------------------------------------- formatting (times are naive, stored as UTC)
+  const LRI = v => '\u2066' + v + '\u2069';      // keep dates and signed numbers left-to-right inside Arabic text
+  const fmtD = d => d ? LRI(new Date(d).toISOString().slice(0, 10)) : t('none');
+  const fmtDT = d => LRI(new Date(d).toISOString().slice(0, 16).replace('T', ' '));
+  const f1 = v => (v == null || isNaN(v)) ? '–' : LRI((v > 0 ? '+' : '') + v.toFixed(1));
+  const sgn = v => v > 0 ? 'pos' : 'neg';
+
+  // ---------------------------------------------------------------- reading files
+  const SEXF = /(female|famle|women|woman|نساء|اناث|إناث)/i, SEXM = /(male|men|\bman\b|رجال|ذكور)/i;
+  function sexFromName(n) { if (SEXF.test(n)) return 'F'; if (SEXM.test(n)) return 'M'; return ''; }
+  function naive(v) {
+    if (v == null || v === '') return NaN;
+    if (typeof v === 'number') return Math.round((v - 25569) * 864e5);            // Excel serial day
+    if (v instanceof Date) return Date.UTC(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds());
+    const m = String(v).trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    const m2 = String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);   // dd/mm/yyyy
+    if (m2) return Date.UTC(+m2[3], +m2[2] - 1, +m2[1], +(m2[4] || 0), +(m2[5] || 0), +(m2[6] || 0));
+    return NaN;
+  }
+  function findCol(h, names, avoid = []) {
+    const low = h.map(x => String(x || '').toLowerCase().trim());
+    for (const n of names) { const i = low.findIndex(x => x === n); if (i >= 0) return i; }
+    for (const n of names) { const i = low.findIndex(x => x.includes(n) && !avoid.some(a => x.includes(a))); if (i >= 0) return i; }
+    return -1;
+  }
+  async function readFile(file) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: true });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    let hi = rows.findIndex(r => r.some(c => /rlu/i.test(String(c))));
+    if (hi < 0) throw new Error(file.name + ': no RLU column');
+    const h = rows[hi];
+    const ci = { test: findCol(h, ['chemistry', 'test name', 'item', 'assay', 'test']), result: findCol(h, ['result'], ['unit', 'flag']),
+      rlu: findCol(h, ['rlu']), run: findCol(h, ['run date', 'run time', 'run', 'test date', 'test time', 'measure', 'datetime', 'date'], ['order', 'birth']), sex: findCol(h, ['sex', 'gender']),
+      id: findCol(h, ['sample id', 'sample no', 'sample']) };
+    if (ci.test < 0 || ci.result < 0 || ci.run < 0) throw new Error(file.name + ': needs analyte, result, RLU and run-time columns');
+    const fsex = sexFromName(file.name), out = [];
+    for (const r of rows.slice(hi + 1)) {
+      if (!r[ci.test] && !r[ci.result]) continue;
+      let sx = fsex;
+      if (ci.sex >= 0) { const v = String(r[ci.sex]).trim().toUpperCase(); if (v.startsWith('F') || v === 'أنثى') sx = 'F'; else if (v.startsWith('M') || v === 'ذكر') sx = 'M'; }
+      out.push({ test: r[ci.test], result: r[ci.result], rlu: r[ci.rlu], run: naive(r[ci.run]), sex: sx, key: [ci.id >= 0 ? r[ci.id] : '', r[ci.test], r[ci.result], r[ci.rlu], r[ci.run]].join('\u0001') });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------- simulated example
+  function simulate() {
+    const r = C.rng(20261024), norm = () => { let u = 0, v = 0; while (!u) u = r(); v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    const pois = l => { let k = 0, p = 1; const L = Math.exp(-l); do { k++; p *= r(); } while (p > L); return k - 1; };
+    const plans = {
+      'FERR (sim)': { mu: Math.log(25), sd: 1.0, b: 0.95, base: 3e4, ev: [['2024-03-12', 0.85, 1.00, 3], ['2024-07-20', 1, 0.88, 0], ['2024-11-05', 1.25, 1.03, 4], ['2025-03-01', 1, 1.15, 0], ['2025-08-10', 0.9, 0.80, 3], ['2026-02-14', 1, 1.20, 0]] },
+      'TSH (sim)': { mu: Math.log(1.8), sd: 0.85, b: 0.97, base: 2.5e5, ev: [['2024-02-01', 1, 1.12, 0], ['2024-06-15', 0.8, 0.95, 3], ['2024-10-20', 1, 0.90, 0], ['2025-05-05', 1.3, 1.30, 4], ['2025-12-01', 1, 1.18, 0], ['2026-05-10', 1, 0.86, 0]] },
+    };
+    const recs = [], key = [], day0 = Date.UTC(2024, 0, 2), day1 = Date.UTC(2026, 8, 30);
+    for (const [test, P] of Object.entries(plans)) {
+      const ev = P.ev.map(e => ({ t: Date.UTC(+e[0].slice(0, 4), +e[0].slice(5, 7) - 1, +e[0].slice(8, 10)), yMul: e[1], calMul: e[2], gap: e[3], s: 1 + 0.02 * norm() }));
+      let y = 1, cal = 1, sl = 1;
+      for (let d = day0; d <= day1; d += 864e5) {
+        const wd = new Date(d).getUTCDay(); if (wd === 5) continue;                       // closed on Fridays
+        const e = ev.find(x => d < x.t && d >= x.t - x.gap * 864e5); if (e) continue;     // reagent stock-out before a new lot
+        const now = ev.filter(x => x.t <= d); y = now.reduce((a, x) => a * x.yMul, 1); cal = now.reduce((a, x) => a * x.calMul * x.yMul, 1); sl = now.length ? now[now.length - 1].s : 1;
+        const n = pois(4);
+        for (let i = 0; i < n; i++) {
+          const c = Math.exp(P.mu + P.sd * norm()), rlu = P.base * y * Math.pow(c, P.b) * Math.exp(0.02 * norm());
+          const res = Math.pow(rlu / (P.base * cal), 1 / (P.b * sl));
+          const tm = d + (8 + 10 * r()) * 36e5;
+          recs.push({ test, run: Math.round(tm), sex: r() < 0.85 ? 'F' : 'M', result: res.toFixed(res < 10 ? 3 : 2), rlu: rlu.toFixed(2), key: test + tm + i });
+        }
+      }
+      ev.forEach(x => key.push(`${test.split(' ')[0]} ${fmtD(x.t)} (${f1(100 * (Math.pow(1 / x.calMul, 1 / P.b) - 1))}% on patients${x.yMul !== 1 ? ', new lot' : ''})`));
+    }
+    return { recs, key };
+  }
+
+  // ---------------------------------------------------------------- state and worker
+  let fileErrs = [], raw = [], prep = null, results = {}, current = null, demoKey = null, stats = null, statsSeq = 0;
+  const workerSrc = $('#core-src').textContent + `
+    let EV = {};
+    self.onmessage = e => {
+      const m = e.data;
+      if (m.cmd === 'stats') {
+        const all = [];
+        for (const test of m.tests) {
+          const evs = EV[test] || [];
+          const s = RLUCore.patientStats(evs, { reps: 500, perms: 2000 }, f => self.postMessage({ cmd: 'progress', seq: m.seq, test, f }));
+          s.forEach((v, i) => all.push(Object.assign({ test, k: evs[i].k }, v)));
+        }
+        const q = RLUCore.bh(all.map(a => a.p)); all.forEach((a, i) => a.q = q[i]);
+        self.postMessage({ cmd: 'stats', seq: m.seq, rows: all });
+      } else if (m.cmd === 'events') { EV = m.events; }
+    };`;
+  let worker = null;
+  try { worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' }))); } catch (e) { worker = null; }
+
+  function settings() {
+    const v = id => parseFloat($(id).value);
+    const sd = $('#s-start').value;
+    return { pen: v('#s-pen'), minSize: Math.max(5, Math.round(v('#s-min'))), minShift: v('#s-merge') / 100, window: Math.round(v('#s-win')),
+      T: v('#s-T'), R: Math.round(v('#s-R')), Kr: Math.round(v('#s-Kr')), start: sd ? Date.UTC(+sd.slice(0, 4), +sd.slice(5, 7) - 1, +sd.slice(8, 10)) : null };
+  }
+
+  function analyseAll() {
+    if (!raw.length) { prep = null; results = {}; current = null; render(); return; }
+    const S = settings();
+    // default start: first day on which every recorded sex has results (both sexes then cover the same period)
+    let start = S.start;
+    if (start == null) {
+      const first = {}; for (const r of raw) if (r.sex && isFinite(r.run)) first[r.sex] = Math.min(first[r.sex] ?? Infinity, r.run);
+      const v = Object.values(first); start = v.length > 1 ? Math.max(...v) : null;
+      if (start != null) start = Math.floor(start / 864e5) * 864e5;
+    }
+    prep = C.prepare(raw.map(r => ({ ...r, run: new Date(r.run) })), { start: start != null ? new Date(start) : null });
+    prep.start = start;
+    const counts = {};
+    for (const r of prep.records) if (r.censor === '' && r.value > 0 && r.RLU > 0) counts[r.test] = (counts[r.test] || 0) + 1;
+    const tests = Object.keys(counts).filter(k => counts[k] >= 4 * S.minSize).sort((a, b) => counts[b] - counts[a]);
+    results = {};
+    for (const test of tests) {
+      const res = C.analyse(prep.records, test, S);
+      if (res.error) continue;
+      const lr = res.x.map(o => Math.log(o.RLU)), lv = res.x.map(o => Math.log(o.value));
+      res.monDev = new Array(lr.length).fill(NaN); res.monT = S.T;
+      res.alarms = C.monitor(lr, lv, S.T, S.R, S.Kr, 30, 200, res.monDev).map(a => ({ ...a, time: res.x[a.raised].run.getTime(), firstTime: res.x[a.first].run.getTime() }));
+      const et = res.events.map(e => e.time.getTime());
+      res.alarms.forEach(a => a.near = et.some(x => a.time >= x && a.time <= x + 7 * 864e5));
+      res.events.forEach(e => { const x = e.time.getTime(); e.flagged = res.alarms.some(a => a.time >= x && a.time <= x + 7 * 864e5); });
+      results[test] = res;
+    }
+    if (!current || !results[current]) current = tests.find(k => results[k]) || null;
+    stats = null; render(); runStats();
+  }
+
+  function runStats() {
+    const tests = Object.keys(results); if (!tests.length) return;
+    const seq = ++statsSeq;
+    const ev = {}; tests.forEach(k => ev[k] = results[k].events.map(e => ({ k: e.k, _patient: e._patient })));
+    const done = rows => { if (seq !== statsSeq) return; stats = {}; rows.forEach(r => stats[r.test + '|' + r.k] = r); $('#prog').hidden = true; render(); };
+    $('#prog').hidden = false; $('#prog i').style.width = '0%'; $('#statsNote').textContent = t('statsRun');
+    if (worker) {
+      worker.onmessage = e => {
+        const m = e.data; if (m.seq !== seq) return;
+        if (m.cmd === 'progress') { const i = tests.indexOf(m.test); $('#prog i').style.width = (100 * (i + m.f) / tests.length).toFixed(0) + '%'; }
+        else if (m.cmd === 'stats') done(m.rows);
+      };
+      worker.postMessage({ cmd: 'events', events: ev }); worker.postMessage({ cmd: 'stats', seq, tests });
+    } else {
+      setTimeout(() => { const all = []; tests.forEach(k => C.patientStats(ev[k], { reps: 500, perms: 2000 }).forEach((v, i) => all.push(Object.assign({ test: k, k: ev[k][i].k }, v))));
+        const q = C.bh(all.map(a => a.p)); all.forEach((a, i) => a.q = q[i]); done(all); }, 30);
+    }
+  }
+
+  // ---------------------------------------------------------------- rendering
+  function render() {
+    renderSummary(); renderAnalytes();
+    $('#introTitle').textContent = t('introTitle'); $('#introLead').textContent = t('introLead');
+    $('#introSteps').innerHTML = (T[lang].introSteps || T.en.introSteps).map(x => `<li>${x}</li>`).join('');
+    { const S = settings(); $('#how').innerHTML = t('how', { R: S.R, T: S.T, P: (100 * Math.expm1(S.T)).toFixed(1) }); $('#ver').innerHTML = t('ver'); }
+    const R = current && results[current];
+    $('#readout').style.opacity = R ? 1 : .55;
+    if (!R) { $('#statusTitle').textContent = lang === 'ar' ? I18N.ar.noData : 'No data loaded.'; $('#statusText').textContent = ''; $('#kpis').innerHTML = ''; return; }
+    renderStatus(R); renderKpis(R); drawChart(R); renderEvents(R); renderAlarms(R);
+    $('#demoBanner').hidden = !demoKey;
+    if (demoKey) $('#demoBanner').textContent = t('demoBanner', { list: demoKey.join('; ') });
+  }
+  function renderSummary() {
+    const el = $('#summary');
+    const errHtml = fileErrs.length ? `<dt class="err">!</dt><dd class="err">${fileErrs.map(e => t('errFiles', { e })).join('<br>')}</dd>` : '';
+    if (!prep) { el.innerHTML = errHtml; return; }
+    const rs = prep.records, a = rs.length ? rs[0].run : null, b = rs.length ? rs[rs.length - 1].run : null;
+    const rows = [[t('records'), rs.length.toLocaleString('en')], [t('period'), a ? fmtD(a) + ' → ' + fmtD(b) : '–'], [t('dups'), prep.duplicates], [t('noRun'), prep.withoutRunTime]];
+    if (prep.start != null) rows.push([t('excluded') + ' (' + fmtD(prep.start) + ')', prep.beforeStart]);
+    rows.push([t('analytesN'), Object.keys(results).length]);
+    if (rs.length && !Object.keys(results).length) rows.push([t('tooFew', { n: 4 * settings().minSize }), '']);
+    el.innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + errHtml;
+  }
+  function renderAnalytes() {
+    const el = $('#analytes'), ks = Object.keys(results);
+    if (!ks.length) { el.innerHTML = `<p class="empty">${I18N[lang]?.noData || 'No data loaded.'}</p>`; return; }
+    el.innerHTML = ks.map(k => `<button class="analyte" type="button" aria-pressed="${k === current}" data-k="${k}"><b>${k}</b><span>${results[k].events.length} ${t('cps')}</span><span style="grid-column:1/-1">${results[k].n.toLocaleString('en')} ${t('usable')}</span></button>`).join('');
+    el.querySelectorAll('button').forEach(b => b.onclick = () => { current = b.dataset.k; render(); });
+  }
+  function renderStatus(R) {
+    const st = $('#status'), x = R.x, lastT = x[x.length - 1].run.getTime();
+    const lastEv = R.events[R.events.length - 1], lastAl = R.alarms[R.alarms.length - 1];
+    const curStart = lastEv ? lastEv.index : 0, nCur = x.length - curStart;
+    st.className = 'status';
+    if (lastAl && lastAl.raised >= x.length - 30 && (!lastEv || lastAl.raised > lastEv.index + 30)) {
+      st.classList.add('alarm'); $('#pill').textContent = t('alarm');
+      $('#statusTitle').textContent = t('alarmTitle', { d: fmtD(lastAl.time) }); $('#statusText').textContent = t('alarmText', { n: x.length - lastAl.first });
+    } else if (lastEv && nCur < 60) {
+      st.classList.add('recent'); $('#pill').textContent = t('recent');
+      $('#statusTitle').textContent = t('sinceTitle', { d: fmtD(lastEv.time) }); $('#statusText').textContent = t('recentText', { d: fmtD(lastEv.time), n: nCur });
+    } else {
+      $('#pill').textContent = t('stable');
+      $('#statusTitle').textContent = t('sinceTitle', { d: fmtD(lastEv ? lastEv.time : x[0].run) });
+      $('#statusText').textContent = t('sinceText', { n: nCur.toLocaleString('en'), d0: lastEv ? fmtD(lastEv.time) : t('none'), d1: lastAl ? fmtD(lastAl.time) : t('none') });
+    }
+  }
+  function renderKpis(R) {
+    const days = (R.x[R.x.length - 1].run - R.x[0].run) / 864e5 || 1;
+    const med = R.events.length ? C.median(R.events.map(e => Math.abs(e.curveShift))) : NaN;
+    const det = stats ? R.events.filter(e => (stats[R.test + '|' + e.k] || {}).q < 0.05).length : null;
+    const k = [[R.events.length, t('kCp')], [isNaN(med) ? '–' : med.toFixed(1) + '%', t('kMed')], [(R.n / days).toFixed(1), t('kRate')], [R.alarms.length, t('kAlarms')], [det == null ? '…' : det, t('kDet')]];
+    $('#kpis').innerHTML = k.map(([v, l]) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  }
+  function catOf(R, e) {
+    const s = stats && stats[R.test + '|' + e.k]; if (!s) return null;
+    return s.q < 0.05 ? 'det' : (s.lo > -10 && s.hi < 10 ? 'comp' : 'indet');
+  }
+  function eventRows(R) {
+    return R.events.map(e => {
+      const s = stats && stats[R.test + '|' + e.k], cat = catOf(R, e);
+      const comp = 100 * Math.expm1(e.beta * Math.log1p(e.signalShift / 100));
+      const offset = comp * e.curveShift < 0 && Math.abs(comp) >= 5;
+      return { e, s, cat, offset };
+    });
+  }
+  function renderEvents(R) {
+    const tb = $('#events');
+    if (!R.events.length) { tb.innerHTML = `<tr><td class="empty">${t('noEvents')}</td></tr>`; return; }
+    const head = ['hDate', 'hCurve', 'hRange', 'hSignal', 'hPatient', 'hQ', 'hCat', 'hGap', 'hMon', 'hN'].map(k => `<th>${t(k)}</th>`).join('');
+    tb.innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + eventRows(R).map(({ e, s, cat, offset }) =>
+      `<tr><td>${fmtD(e.time)}</td><td class="${sgn(e.curveShift)}">${f1(e.curveShift)}</td><td>${e.shiftRange.toFixed(1)}</td>` +
+      `<td>${f1(e.signalShift)}${offset ? ` <span class="tag off">${t('offset')}</span>` : ''}</td>` +
+      `<td>${f1(e.patientShift)}${s ? ` (${f1(s.lo)} to ${f1(s.hi)})` : ''}</td><td>${s ? s.q.toFixed(3) : '…'}</td>` +
+      `<td>${cat ? `<span class="tag ${cat}">${t(cat)}</span>` : `<span class="tag">${t('pending')}</span>`}</td>` +
+      `<td>${e.gapNear ? t('yes') : t('no')}</td><td>${e.flagged ? t('yes') : t('no')}</td><td>${e.nBefore} / ${e.nAfter}</td></tr>`).join('') + '</tbody>';
+    $('#statsNote').textContent = stats ? t('statsDone') : t('statsRun');
+  }
+  function renderAlarms(R) {
+    const tb = $('#alarms');
+    if (!R.alarms.length) { tb.innerHTML = `<tr><td class="empty">${t('noAlarms')}</td></tr>`; return; }
+    tb.innerHTML = `<thead><tr><th>${t('aRaised')}</th><th>${t('aFirst')}</th><th>${t('aNear')}</th></tr></thead><tbody>` +
+      R.alarms.slice().reverse().map(a => `<tr><td>${fmtDT(a.time)}</td><td>${fmtDT(a.firstTime)}</td><td>${a.near ? t('yes') : t('no')}</td></tr>`).join('') + '</tbody>';
+  }
+
+  // ---------------------------------------------------------------- charts (all drawn from the current analysis)
+  const cv = $('#chart'), tip = $('#tip');
+  let tab = 'dev', hits = [];
+  try { tab = localStorage.getItem('rlu-tab') || 'dev'; } catch (e) {}
+  const TABS = ['dev', 'curves', 'trans', 'signal', 'monitor'];
+  function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function niceStep(r) { const p = Math.pow(10, Math.floor(Math.log10(r))), f = r / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; }
+  const PALETTE = () => ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'].map(css);
+
+  /** Plot frame: linear or log axes, grid, tick labels; returns scale functions. */
+  function frame(g, W, H, xr, yr, o) {
+    const pad = { l: 54, r: 14, t: 14, b: 40 }, muted = css('--muted'), line = css('--line');
+    const tx = v => o.xlog ? Math.log10(v) : v, ty = v => o.ylog ? Math.log10(v) : v;
+    const [x0, x1] = xr.map(tx), [y0, y1] = yr.map(ty);
+    const X = v => pad.l + (tx(v) - x0) / (x1 - x0 || 1) * (W - pad.l - pad.r), Y = v => pad.t + (y1 - ty(v)) / (y1 - y0 || 1) * (H - pad.t - pad.b);
+    g.font = '11px ' + css('--font-data'); g.lineWidth = 1;
+    const ticks = (a, b, log) => {
+      if (log) { const out = []; for (let e = Math.floor(a); e <= Math.ceil(b); e++) for (const m of [1, 2, 5]) { const v = m * Math.pow(10, e), lv = Math.log10(v); if (lv >= a && lv <= b) out.push(v); } return out; }
+      const s = niceStep((b - a) / 5), out = []; for (let v = Math.ceil(a / s) * s; v <= b + 1e-9; v += s) out.push(+v.toFixed(10)); return out;
+    };
+    const fmt = (v, log, unit) => (log ? (v >= 1000 ? (v / 1000) + 'k' : String(+v.toPrecision(3))) : ((o.signed && v > 0 ? '+' : '') + (+v.toFixed(6)))) + (unit || '');
+    if (!o.xtime) {
+      for (const v of ticks(x0, x1, o.xlog)) { const x = Math.round(X(v)) + .5; g.strokeStyle = line; g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, H - pad.b); g.stroke(); g.fillStyle = muted; g.textAlign = 'center'; g.fillText(fmt(v, o.xlog, o.xunit), x, H - pad.b + 14); }
+    }
+    for (const v of ticks(y0, y1, o.ylog)) { const y = Math.round(Y(v)) + .5; g.strokeStyle = line; g.beginPath(); g.moveTo(pad.l, y); g.lineTo(W - pad.r, y); g.stroke(); g.fillStyle = muted; g.textAlign = 'right'; g.fillText(fmt(v, o.ylog, o.yunit), pad.l - 6, y + 4); }
+    g.fillStyle = muted; g.textAlign = 'center'; g.fillText(o.xlabel || '', (pad.l + W - pad.r) / 2, H - 6);
+    g.save(); g.translate(12, (pad.t + H - pad.b) / 2); g.rotate(-Math.PI / 2); g.fillText(o.ylabel || '', 0, 0); g.restore();
+    return { X, Y, pad };
+  }
+  function timeAxis(g, W, H, pad, t0, t1, X) {
+    const muted = css('--muted'), line = css('--line'), months = [];
+    const d0 = new Date(t0); let y0 = d0.getUTCFullYear(), m0 = d0.getUTCMonth() + 1;
+    for (;;) { const tt = Date.UTC(y0, m0, 1); if (tt > t1) break; months.push(tt); m0++; if (m0 > 11) { m0 = 0; y0++; } }
+    const every = Math.max(1, Math.ceil(months.length / Math.max(2, Math.floor((W - pad.l) / 70))));
+    g.textAlign = 'center';
+    months.forEach((tt, i) => { const xx = Math.round(X(tt)) + .5; g.strokeStyle = line; g.beginPath(); g.moveTo(xx, H - pad.b); g.lineTo(xx, H - pad.b + 4); g.stroke();
+      if (i % every === 0) { g.fillStyle = muted; g.fillText(new Date(tt).toISOString().slice(0, 7), xx, H - pad.b + 16); } });
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  function setupCanvas(c) {
+    const dpr = window.devicePixelRatio || 1, W = c.clientWidth || 900, H = c.clientHeight || 340;
+    c.width = W * dpr; c.height = H * dpr; const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.direction = 'ltr'; g.clearRect(0, 0, W, H);
+    return { g, W, H };
+  }
+  function legend(items) { $('#legend').innerHTML = items.map(([c, l, shape]) => `<span><i class="${shape || ''}" style="background:${c}"></i>${l}</span>`).join(''); }
+
+  const CHARTS = {
+    dev(R, g, W, H, out) {
+      const x = R.x, dev = R.deviation, t0 = x[0].run.getTime(), t1 = x[x.length - 1].run.getTime();
+      let lo = C.percentile(dev, 0.5), hi = C.percentile(dev, 99.5); const m = (hi - lo) * 0.08; lo -= m; hi += m;
+      const F = frame(g, W, H, [t0, t1], [lo, hi], { xtime: true, signed: true, yunit: '%', ylabel: t('yDev') });
+      timeAxis(g, W, H, F.pad, t0, t1, F.X);
+      const cw = css('--women'), cm = css('--men'), cu = css('--muted');
+      g.globalAlpha = .55;
+      for (let i = 0; i < x.length; i++) { const px = F.X(x[i].run.getTime()), py = F.Y(clamp(dev[i], lo, hi)); g.fillStyle = x[i].sex === 'F' ? cw : x[i].sex === 'M' ? cm : cu; g.fillRect(px - 1.3, py - 1.3, 2.6, 2.6);
+        out.push({ px, py, text: () => `${fmtDT(x[i].run)} · ${x[i].value} · RLU ${Math.round(x[i].RLU).toLocaleString('en')} · ${f1(dev[i])}%` }); }
+      g.globalAlpha = 1;
+      const crit = css('--crit');
+      R.events.forEach(e => { const xx = Math.round(F.X(e.time.getTime())) + .5, det = catOf(R, e) === 'det';
+        g.strokeStyle = crit; g.lineWidth = det ? 2 : 1; g.setLineDash(det ? [] : [4, 3]); g.beginPath(); g.moveTo(xx, F.pad.t); g.lineTo(xx, H - F.pad.b); g.stroke(); });
+      g.setLineDash([]); g.strokeStyle = css('--ink'); g.lineWidth = 2.2; let s0 = 0;
+      R.bkps.forEach(e => { const md = clamp(C.median(dev.slice(s0, e)), lo, hi); g.beginPath(); g.moveTo(F.X(x[s0].run.getTime()), F.Y(md)); g.lineTo(F.X(x[e - 1].run.getTime()), F.Y(md)); g.stroke(); s0 = e; });
+      g.fillStyle = css('--alarm');
+      R.alarms.forEach(a => { const xx = F.X(a.time); g.beginPath(); g.moveTo(xx, F.pad.t + 9); g.lineTo(xx - 5, F.pad.t); g.lineTo(xx + 5, F.pad.t); g.closePath(); g.fill(); });
+      legend([[cw, t('women')], [cm, t('men')], [css('--ink'), t('segMed'), 'line'], [crit, t('cpLeg'), 'line'], [css('--alarm'), t('alarmLeg'), 'sq']]);
+    },
+    curves(R, g, W, H, out) {
+      const x = R.x, rl = x.map(r => r.RLU), vl = x.map(r => r.value);
+      const xr = [C.percentile(rl, 0.2), C.percentile(rl, 99.8)], yr = [C.percentile(vl, 0.2), C.percentile(vl, 99.8)];
+      const F = frame(g, W, H, xr, yr, { xlog: true, ylog: true, xlabel: t('xRLU'), ylabel: t('yResult') });
+      const pal = PALETTE(), lr = x.map(r => Math.log(r.RLU)), lv = x.map(r => Math.log(r.value));
+      const mu = lr.reduce((a, b) => a + b, 0) / lr.length, sd = Math.sqrt(lr.reduce((a, b) => a + (b - mu) ** 2, 0) / lr.length);
+      const z = lr.map(v => (v - mu) / sd);
+      const step = Math.max(1, Math.floor(x.length / 5000)); let s0 = 0; const leg = [];
+      g.globalAlpha = .35;
+      R.bkps.forEach((e, k) => { g.fillStyle = pal[k % pal.length];
+        for (let i = s0; i < e; i += step) { if (rl[i] < xr[0] || rl[i] > xr[1] || vl[i] < yr[0] || vl[i] > yr[1]) continue; const px = F.X(rl[i]), py = F.Y(vl[i]); g.fillRect(px - 1.2, py - 1.2, 2.4, 2.4);
+          out.push({ px, py, text: () => `${fmtDT(x[i].run)} · RLU ${Math.round(rl[i]).toLocaleString('en')} · ${vl[i]} · ${t('segment')} ${k + 1}` }); }
+        s0 = e; });
+      g.globalAlpha = 1; s0 = 0;
+      R.bkps.forEach((e, k) => {
+        const idx = []; for (let i = s0; i < e; i++) idx.push(i);
+        const beta = C.polyFit(z, lv, idx, 3), segR = lr.slice(s0, e), a = C.percentile(segR, 2), b = C.percentile(segR, 98);
+        const last = k === R.bkps.length - 1;
+        g.strokeStyle = pal[k % pal.length]; g.lineWidth = last ? 3 : 1.6; g.beginPath();
+        for (let j = 0; j <= 60; j++) { const q = a + (b - a) * j / 60, yv = Math.exp(C.polyEval(beta, (q - mu) / sd)), xv = Math.exp(q);
+          if (xv < xr[0] || xv > xr[1]) continue; const py = F.Y(clamp(yv, yr[0], yr[1])); j ? g.lineTo(F.X(xv), py) : g.moveTo(F.X(xv), py); }
+        g.stroke();
+        leg.push([pal[k % pal.length], `${k + 1}: ${fmtD(x[s0].run)}${last ? ' (' + t('current') + ')' : ''}`, 'line']);
+        s0 = e; });
+      legend(leg.length > 8 ? leg.slice(0, 3).concat([['transparent', '…']], leg.slice(-4)) : leg);
+    },
+    trans(R, g, W, H, out) {
+      const E = R.events; if (!E.length) return emptyChart(g, W, H);
+      const xs = E.map(e => e.curveShift), ys = E.map(e => e.patientShift), st = E.map(e => stats && stats[R.test + '|' + e.k]);
+      const all = xs.concat(ys, st.filter(Boolean).flatMap(s => [s.lo, s.hi])); let lo = Math.min(...all, -10), hi = Math.max(...all, 10); const m = (hi - lo) * .08; lo -= m; hi += m;
+      const F = frame(g, W, H, [lo, hi], [lo, hi], { signed: true, xunit: '%', yunit: '%', xlabel: t('xCurve'), ylabel: t('yPatient') });
+      g.strokeStyle = css('--muted'); g.setLineDash([4, 4]); g.beginPath(); g.moveTo(F.X(lo), F.Y(lo)); g.lineTo(F.X(hi), F.Y(hi)); g.stroke(); g.setLineDash([]);
+      g.strokeStyle = css('--line'); g.beginPath(); g.moveTo(F.X(0), F.pad.t); g.lineTo(F.X(0), H - F.pad.b); g.moveTo(F.pad.l, F.Y(0)); g.lineTo(W - F.pad.r, F.Y(0)); g.stroke();
+      // least-squares slope on the log scale
+      let slope = NaN;
+      if (E.length >= 3) { const lx = xs.map(v => Math.log1p(v / 100)), ly = ys.map(v => Math.log1p(v / 100)), mx = lx.reduce((a, b) => a + b, 0) / lx.length, my = ly.reduce((a, b) => a + b, 0) / ly.length;
+        let sxy = 0, sxx = 0; lx.forEach((v, i) => { sxy += (v - mx) * (ly[i] - my); sxx += (v - mx) ** 2; }); slope = sxy / sxx; const b0 = my - slope * mx;
+        g.strokeStyle = css('--ink'); g.lineWidth = 2; g.beginPath();
+        const xa = Math.min(...xs), xb = Math.max(...xs);
+        for (let j = 0; j <= 40; j++) { const xv = xa + (xb - xa) * j / 40; if (xv <= -99) continue; const yv = 100 * Math.expm1(b0 + slope * Math.log1p(xv / 100)); if (yv < lo || yv > hi) continue; const px = F.X(xv), py = F.Y(yv); j ? g.lineTo(px, py) : g.moveTo(px, py); }
+        g.stroke(); }
+      E.forEach((e, i) => { const s = st[i], c = catOf(R, e) === 'det' ? css('--crit') : css('--signal'); const px = F.X(xs[i]), py = F.Y(ys[i]);
+        if (s) { g.strokeStyle = c; g.lineWidth = 1; g.beginPath(); g.moveTo(px, F.Y(clamp(s.lo, lo, hi))); g.lineTo(px, F.Y(clamp(s.hi, lo, hi))); g.stroke(); }
+        g.fillStyle = c; g.beginPath(); g.arc(px, py, 4.5, 0, 7); g.fill();
+        out.push({ px, py, text: () => `${fmtD(e.time)} · ${t('hCurve')} ${f1(e.curveShift)} · ${t('hPatient')} ${f1(e.patientShift)}${s ? ` (${f1(s.lo)} to ${f1(s.hi)})` : ''}` }); });
+      legend([[css('--signal'), t('evPoint')], [css('--crit'), t('det')], [css('--ink'), t('fitSlope', { s: isNaN(slope) ? '–' : slope.toFixed(2) }), 'line'], [css('--muted'), t('fullTrans'), 'line']]);
+    },
+    signal(R, g, W, H, out) {
+      const E = R.events; if (!E.length) return emptyChart(g, W, H);
+      const xs = E.map(e => e.curveShift), ys = E.map(e => 100 * Math.expm1(e.beta * Math.log1p(e.signalShift / 100)));
+      const all = xs.concat(ys); let lo = Math.min(...all, -10), hi = Math.max(...all, 10); const m = (hi - lo) * .08; lo -= m; hi += m;
+      const F = frame(g, W, H, [lo, hi], [lo, hi], { signed: true, xunit: '%', yunit: '%', xlabel: t('xCurve'), ylabel: t('ySignal') });
+      g.strokeStyle = css('--line'); g.beginPath(); g.moveTo(F.X(0), F.pad.t); g.lineTo(F.X(0), H - F.pad.b); g.moveTo(F.pad.l, F.Y(0)); g.lineTo(W - F.pad.r, F.Y(0)); g.stroke();
+      g.strokeStyle = css('--muted'); g.setLineDash([4, 4]); g.beginPath(); let started = false;
+      for (let j = 0; j <= 80; j++) { const c = lo + (hi - lo) * j / 80; if (c <= -99) continue; const yv = 100 * (1 / (1 + c / 100) - 1); if (yv < lo || yv > hi) { started = false; continue; } const px = F.X(c), py = F.Y(yv); started ? g.lineTo(px, py) : g.moveTo(px, py); started = true; }
+      g.stroke(); g.setLineDash([]);
+      E.forEach((e, i) => { const px = F.X(xs[i]), py = F.Y(ys[i]), off = ys[i] * xs[i] < 0 && Math.abs(ys[i]) >= 5;
+        g.fillStyle = off ? css('--signal') : css('--muted'); g.beginPath(); g.arc(px, py, 4.5, 0, 7); g.fill();
+        out.push({ px, py, text: () => `${fmtD(e.time)} · ${t('hCurve')} ${f1(e.curveShift)} · ${t('hSignal')} ${f1(e.signalShift)} · β ${e.beta.toFixed(2)}` }); });
+      legend([[css('--signal'), t('offset')], [css('--muted'), t('notOffset')], [css('--muted'), t('fullComp'), 'line']]);
+    },
+    monitor(R, g, W, H, out) {
+      const x = R.x, d = R.monDev, T = R.monT, t0 = x[0].run.getTime(), t1 = x[x.length - 1].run.getTime();
+      const pc = Array.from(d, v => isNaN(v) ? NaN : 100 * Math.expm1(v)), fin = pc.filter(v => !isNaN(v));
+      const band = 100 * Math.expm1(T), bandLo = 100 * Math.expm1(-T);
+      let lo = Math.min(C.percentile(fin, 0.5), bandLo * 2), hi = Math.max(C.percentile(fin, 99.5), band * 2);
+      const F = frame(g, W, H, [t0, t1], [lo, hi], { xtime: true, signed: true, yunit: '%', ylabel: t('yMonitor') });
+      timeAxis(g, W, H, F.pad, t0, t1, F.X);
+      g.fillStyle = css('--signal-soft'); g.fillRect(F.pad.l, F.Y(band), W - F.pad.l - F.pad.r, F.Y(bandLo) - F.Y(band));
+      const ok = css('--muted'), bad = css('--alarm');
+      for (let i = 0; i < x.length; i++) { if (isNaN(pc[i])) continue; const px = F.X(x[i].run.getTime()), py = F.Y(clamp(pc[i], lo, hi)), out_ = Math.abs(d[i]) > T;
+        g.fillStyle = out_ ? bad : ok; g.globalAlpha = out_ ? .9 : .45; g.fillRect(px - 1.3, py - 1.3, 2.6, 2.6);
+        out.push({ px, py, text: () => `${fmtDT(x[i].run)} · ${t('yMonitor')} ${f1(pc[i])}%` }); }
+      g.globalAlpha = 1; g.fillStyle = bad;
+      R.alarms.forEach(a => { const xx = F.X(a.time); g.beginPath(); g.moveTo(xx, F.pad.t + 9); g.lineTo(xx - 5, F.pad.t); g.lineTo(xx + 5, F.pad.t); g.closePath(); g.fill(); });
+      legend([[css('--signal-soft'), t('band', { b: band.toFixed(1) }), 'sq'], [bad, t('beyond')], [bad, t('alarmLeg'), 'sq']]);
+    },
+  };
+  function emptyChart(g, W, H) { g.fillStyle = css('--muted'); g.textAlign = 'center'; g.font = '13px ' + css('--font-body'); g.fillText(t('noEvents'), W / 2, H / 2); legend([]); }
+
+  function renderTabs() {
+    $('#tabs').innerHTML = TABS.map(k => `<button type="button" role="tab" class="tab" aria-selected="${k === tab}" data-k="${k}">${t('tab_' + k)}</button>`).join('');
+    $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.k; try { localStorage.setItem('rlu-tab', tab); } catch (e) {} drawChart(results[current]); renderTabs(); });
+    $('#chartCap').textContent = t('cap_' + tab);
+  }
+  function drawChart(R, which = tab, canvas = cv) {
+    const { g, W, H } = setupCanvas(canvas); const out = [];
+    CHARTS[which](R, g, W, H, out);
+    if (canvas === cv) { hits = out; renderTabs(); }
+  }
+  cv.addEventListener('mousemove', ev => {
+    if (!hits.length) return;
+    const rect = cv.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let best = null, bd = 64; for (const h of hits) { const d = (h.px - mx) ** 2 + (h.py - my) ** 2; if (d < bd) { bd = d; best = h; } }
+    if (!best) { tip.hidden = true; return; }
+    tip.textContent = best.text(); tip.hidden = false;
+    tip.style.left = Math.min(rect.width - tip.offsetWidth - 8, Math.max(8, mx + 12)) + 'px'; tip.style.top = (my + 70) + 'px';
+  });
+  cv.addEventListener('mouseleave', () => tip.hidden = true);
+  new ResizeObserver(() => { const R = current && results[current]; if (R) drawChart(R); }).observe(cv);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
+  new MutationObserver(() => render()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------------------------------------------------------------- export
+  const strip = v => String(v).replace(/[\u2066\u2069]/g, '');
+  function eventsCSV() {
+    const R = results[current]; if (!R) return '';
+    const h = ['analyte', 'date', 'curve_shift_pct', 'shift_P10_pct', 'shift_P50_pct', 'shift_P90_pct', 'curve_shift_women_pct', 'curve_shift_men_pct', 'signal_shift_pct', 'local_slope', 'patient_shift_pct', 'patient_lo', 'patient_hi', 'p_perm', 'q', 'category', 'gap_2d_within_5', 'monitor_alarm_7d', 'n_before', 'n_after'];
+    const n = v => (v == null || isNaN(v)) ? '' : (+v).toFixed(4);
+    return [h.join(',')].concat(eventRows(R).map(({ e, s, cat }) => [R.test, fmtDT(e.time), n(e.curveShift), n(e.shiftP10), n(e.shiftP50), n(e.shiftP90), n(e.curveShiftF), n(e.curveShiftM), n(e.signalShift), n(e.beta), n(e.patientShift), n(s && s.lo), n(s && s.hi), n(s && s.p), n(s && s.q), cat ? T.en[cat] : '', e.gapNear ? 1 : 0, e.flagged ? 1 : 0, e.nBefore, e.nAfter].map(strip).join(','))).join('\n');
+  }
+  function alarmsCSV() {
+    const R = results[current]; if (!R) return '';
+    return ['analyte,alarm_raised,first_deviating_result,within_7d_after_change_point'].concat(R.alarms.map(a => [R.test, fmtDT(a.time), fmtDT(a.firstTime), a.near ? 1 : 0].map(strip).join(','))).join('\n');
+  }
+  const dlCap = (window.claude && typeof window.claude.use === 'function') ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+  async function saveFile(name, data, type) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type });
+    const cap = await dlCap;
+    if (cap) { try { await cap.save({ filename: name, data: blob }); } catch (e) { /* declined or unavailable: nothing to do */ } return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function download(name, text) { return saveFile(name, '\ufeff' + text, 'text/csv'); }
+  // ---- input templates
+  const TPL_COLS = ['Sample ID', 'Chemistry', 'Result', 'RLU', 'Run Date', 'Sex'];
+  const TPL_ROWS = [['1', 'TSH', '2.150', '312450.25', '2026-01-05 09:30:00', 'F'], ['1', 'FERR', '45.20', '231899.51', '2026-01-05 09:42:10', 'F'],
+    ['2', 'TSH', '<0.005', '1520.10', '2026-01-05 10:05:33', 'M'], ['3', 'VD', '18.40', '88650.70', '2026-01-05 10:20:05', 'F']];
+  const TPL_NOTE = {
+    en: [['Column', 'Meaning', 'Required'], ['Sample ID', 'Sample or accession number (used only to remove duplicate rows)', 'no'], ['Chemistry', 'Test code as the analyser writes it (TSH, FERR, VD ...)', 'yes'],
+      ['Result', 'Reported result; values below or above the measuring range as <x or >x', 'yes'], ['RLU', 'Raw light signal exported with the result', 'yes'],
+      ['Run Date', 'Date and time the test was run: YYYY-MM-DD HH:MM:SS (DD/MM/YYYY also accepted)', 'yes'], ['Sex', 'F or M (or name files men_... / women_...)', 'no'],
+      [], ['The rows on the Results sheet are examples. Replace them with your data, or upload the analyser export directly if it has these columns.']],
+    ar: [['العمود', 'المعنى', 'مطلوب'], ['Sample ID', 'رقم العينة (يُستخدم لحذف الصفوف المكررة فقط)', 'لا'], ['Chemistry', 'رمز الفحص كما يكتبه الجهاز (TSH، FERR، VD ...)', 'نعم'],
+      ['Result', 'النتيجة المصدرة؛ القيم خارج مدى القياس بصيغة <x أو >x', 'نعم'], ['RLU', 'إشارة الضوء الخام المصدَّرة مع النتيجة', 'نعم'],
+      ['Run Date', 'تاريخ إجراء الفحص ووقته: YYYY-MM-DD HH:MM:SS (وتُقبل صيغة DD/MM/YYYY)', 'نعم'], ['Sex', 'F أو M (أو سمِّ الملفات men_... / women_...)', 'لا'],
+      [], ['الصفوف في ورقة Results أمثلة. استبدلها ببياناتك، أو ارفع ملف الجهاز مباشرة إذا كان يحتوي هذه الأعمدة.']],
+  };
+  function templateXlsx() {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([TPL_COLS].concat(TPL_ROWS)); ws['!cols'] = [12, 12, 10, 14, 20, 6].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    const ins = XLSX.utils.aoa_to_sheet(TPL_NOTE[lang] || TPL_NOTE.en); ins['!cols'] = [{ wch: 14 }, { wch: 70 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, ins, lang === 'ar' ? 'Instructions-تعليمات' : 'Instructions');
+    return new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function templateCsv() { return [TPL_COLS].concat(TPL_ROWS).map(r => r.map(v => /[,"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v).join(',')).join('\n'); }
+  function copy(btn, text) {
+    const done = ok => { const o = btn.textContent; btn.textContent = ok ? t('copied') : t('copyFail'); setTimeout(() => btn.textContent = o, 1600); };
+    try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch (e) { done(false); }
+  }
+  function reportHTML() {
+    const R = results[current]; if (!R) return '';
+    const S = settings(), esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const imgs = TABS.map(k => { const c = document.createElement('canvas'); c.style.width = '900px'; c.style.height = '340px';
+      document.body.appendChild(c); c.style.position = 'absolute'; c.style.left = '-9999px'; drawChart(R, k, c); const u = c.toDataURL('image/png'); c.remove();
+      return `<figure><img src="${u}" alt="${esc(t('tab_' + k))}"><figcaption><b>${esc(t('tab_' + k))}.</b> ${esc(t('cap_' + k))}</figcaption></figure>`; }).join('');
+    drawChart(R);                       // restore the on-screen chart and its legend
+    const col = n => css(n);
+    return `<!doctype html><html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t('title') === 'title' ? 'RLU Calibration Monitor' : document.querySelector('[data-i18n=title]').textContent)} · ${esc(R.test)}</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;background:${col('--bg')};color:${col('--ink')};max-width:980px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0}h2{font-size:16px;margin:24px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{border-bottom:1px solid ${col('--line')};padding:5px 7px;text-align:start;white-space:nowrap}th{color:${col('--muted')}}
+img{max-width:100%;border:1px solid ${col('--line')};border-radius:8px;background:${col('--panel')}}figure{margin:12px 0}figcaption{font-size:12.5px;color:${col('--muted')}}dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 16px}dt{color:${col('--muted')}}dd{margin:0}.box{overflow-x:auto}.muted{color:${col('--muted')};font-size:12.5px}</style></head><body>
+<h1>${esc(document.querySelector('[data-i18n=title]').textContent)} · ${esc(R.test)}</h1><p class="muted">${esc(new Date().toISOString().slice(0, 16).replace('T', ' '))} UTC</p>
+<h2>${esc($('#statusTitle').textContent)}</h2><p>${esc($('#statusText').textContent)}</p>
+<dl>${$('#summary').innerHTML}</dl>
+<h2>${esc(document.querySelector('[data-i18n=settings]').textContent)}</h2><p class="muted">PELT ${S.pen} · ${S.minSize} · ${(S.minShift * 100).toFixed(1)}% · W ${S.window} · T ${S.T} · R ${S.R} · Kr ${S.Kr}</p>
+<div class="box">${$('#kpis').innerText.split('\n').filter(Boolean).reduce((a, v, i, arr) => i % 2 ? a : a + `<span style="margin-inline-end:18px"><b>${esc(v)}</b> ${esc(arr[i + 1] || '')}</span>`, '')}</div>
+${imgs}
+<h2>${esc(document.querySelector('[data-i18n=cpTitle]').textContent)}</h2><div class="box"><table>${$('#events').innerHTML}</table></div><p class="muted">${esc($('#statsNote').textContent)}</p>
+<h2>${esc(document.querySelector('[data-i18n=alarmTitle]').textContent)}</h2><div class="box"><table>${$('#alarms').innerHTML}</table></div>
+<p class="muted">${esc(document.querySelector('[data-i18n=citeA]').textContent)}<br>${esc(document.querySelector('[data-i18n=citeB]').textContent)}<br>${esc(document.querySelector('[data-i18n=thanks]').textContent)}</p></body></html>`;
+  }
+  const safe = s => String(s).replace(/[^\w.-]+/g, '_');
+  $('#dlEvents').onclick = () => download(`rlu_change_points_${safe(current)}.csv`, eventsCSV());
+  $('#dlAlarms').onclick = () => download(`rlu_monitor_alarms_${safe(current)}.csv`, alarmsCSV());
+  $('#cpEvents').onclick = e => copy(e.target, eventsCSV());
+  $('#cpAlarms').onclick = e => copy(e.target, alarmsCSV());
+  $('#report').onclick = () => { const h = reportHTML(); if (h) saveFile(`rlu_report_${safe(current)}.html`, h, 'text/html'); };
+  $('#tplX').onclick = () => saveFile('rlu_monitor_template.xlsx', templateXlsx());
+  $('#tplC').onclick = () => download('rlu_monitor_template.csv', templateCsv());
+
+  // ---------------------------------------------------------------- inputs
+  async function addFiles(list) {
+    const errs = [];
+    for (const f of list) { try { raw = raw.concat(await readFile(f)); } catch (e) { errs.push(e.message); } }
+    demoKey = null;
+    fileErrs = errs;
+    analyseAll();
+  }
+  const drop = $('#drop');
+  $('#files').addEventListener('change', e => addFiles([...e.target.files]));
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#files').click(); } });
+  ['dragenter', 'dragover'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(n => drop.addEventListener(n, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+  $('#demo').onclick = () => { const s = simulate(); raw = s.recs; demoKey = s.key; current = null; analyseAll(); };
+  $('#clear').onclick = () => { fileErrs = []; raw = []; demoKey = null; current = null; $('#files').value = ''; analyseAll(); };
+  $('#rerun').onclick = () => analyseAll();
+
+  try { if (localStorage.getItem('rlu-intro') === 'closed') $('#intro').open = false; } catch (e) {}
+  $('#intro').addEventListener('toggle', () => { try { localStorage.setItem('rlu-intro', $('#intro').open ? 'open' : 'closed'); } catch (e) {} });
+  applyLang();
+  $('#demo').click();          // open in a working state with the simulated example
+})();
+</script>
+
+</body>
+</html>
